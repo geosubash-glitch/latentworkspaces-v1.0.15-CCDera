@@ -1,0 +1,23 @@
+[project]
+name = "latent-studio"
+dynamic = ["version"]
+description = "Analog film emulation workstation tuned for CCD-era digital photographs"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.24", "opencv-python-headless>=4.8", "pillow>=10.0"]
+
+[project.gui-scripts]
+latent-studio = "latent.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "latent.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["latent*"]
+
+[tool.setuptools.package-data]
+latent = ["assets/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

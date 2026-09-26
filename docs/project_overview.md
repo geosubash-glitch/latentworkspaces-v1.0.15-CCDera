@@ -13,9 +13,9 @@ The project is built on the belief that analog film characteristics (color respo
 
 ### The "What"
 LATENT is a three-stage non-destructive image-processing workstation providing:
-1. **Pristine Discovery (Explorer)**: A file selection deck aligned with scaled coordinates to quickly preview and select image targets.
-2. **Emulsion Profile Evaluation (Grid View)**: An interactive 15-cell grid displaying the mounted image processed through 15 distinct film simulation profiles in real-time.
-3. **Advanced Analog Workbench**: A dedicated hardware-simulation console equipped with live Luma Waveforms, interactive cubic spline tone curves, 3-way color grading wheels, CCD-optimized sensor calibration, and geometry corrections.
+1. **01 Library**: a responsive photo browser with a large preview and file details.
+2. **02 Look**: the photo rendered through all 15 film profiles side by side, with a large hover preview.
+3. **03 Develop**: a grading workbench with histogram and luma waveform scopes, an interactive cubic-spline tone curve, 3-way colour wheels, CCD sensor calibration, crop/straighten/perspective, and full-resolution export.
 
 ### The "Why"
 Traditional graphic software and massive suites (like Adobe Illustrator, Lightroom, or Photoshop) are incredibly powerful, but they present a massive, unguided canvas. You can do *anything* in them, but you often cannot reach where you want to go because there are too many options, too many sliders, and no clear direction. The user gets lost in infinite choices.
@@ -36,6 +36,9 @@ LATENT places a paramount value on **authenticity** in every process, step, and 
 
 ## 4. Design & Usability Principles
 
-* **Aesthetic Unity**: Built around a high-contrast industrial laboratory theme using monospaced typography (`Courier New`) and clean outline borders matching laboratory hardware consoles.
-* **Physical Constraints**: Controls are bounded to mimic real chemical and hardware limits, guiding the user toward realistic outcomes.
-* **Zero-Latency GUI**: High-throughput background rendering loop ensures that the interface remains running at 60fps, keeping slider dragging completely fluid.
+* **Aesthetic unity**: a high-contrast laboratory-console look taken from the original Illustrator layouts: near-black surfaces (`#020202` viewport, `#080808` panels), hairline rules, monospaced labels, and a single yellow accent (`#ffcc00`) reserved for the current step, the primary action and values you have changed.
+* **Guided, not unbounded**: three numbered stages, each with one obvious next action. Controls are bounded to realistic chemical and hardware limits.
+* **Always know what changed**: every slider rests at 0 and highlights when moved; sections, wheels and the curve each reset on their own; undo covers every gesture.
+* **Direct manipulation**: drag on the image to pan, scroll to zoom, hold Space to compare, drag crop handles, click to type exact values.
+* **Zero-latency GUI**: rendering runs off the UI thread with frame coalescing, so dragging stays fluid and the window never freezes, even during export.
+* **Works everywhere**: responsive layout, DPI-aware text, keyboard navigation, Unicode file paths and camera EXIF orientation.
