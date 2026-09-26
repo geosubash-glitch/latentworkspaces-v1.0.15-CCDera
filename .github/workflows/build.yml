@@ -1,0 +1,128 @@
+name: Build & Release
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
+      - run: pip install -r requirements.txt pytest
+      - name: Tests (including the UI smoke test on a virtual display)
+        run: xvfb-run -a python -m pytest -q -rs
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-latest
+            name: macOS
+          - os: ubuntu-22.04
+            name: Linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: echo "version=$(python -c 'import latent; print(latent.__version__)')" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag matches version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME#v}" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match latent.__version__ ${{ steps.version.outputs.version }}"; exit 1
+          fi
+
+      - name: Build app with PyInstaller
+        run: pyinstaller packaging/latent.spec --noconfirm
+
+      # ---------------- Windows: installer + portable zip ----------------
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.version.outputs.version }}" packaging\windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows portable zip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "dist\Latent Studio" -DestinationPath "dist\LatentStudio-Windows-Portable.zip"
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\Latent Studio\Latent Studio.exe" -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { Write-Error "App exited early with code $($p.ExitCode)"; exit 1 }
+          Stop-Process -Id $p.Id -Force
+
+      # ---------------- macOS: zipped .app ----------------
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/Latent Studio.app" "dist/LatentStudio-macOS.zip"
+
+      # ---------------- Linux: tarball ----------------
+      - name: Package Linux build
+        if: runner.os == 'Linux'
+        run: tar czf "dist/LatentStudio-Linux-x64.tar.gz" -C dist "Latent Studio"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LatentStudio-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            dist/LatentStudio-*.exe
+            dist/LatentStudio-*.zip
+            dist/LatentStudio-*.tar.gz
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Latent Studio ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*

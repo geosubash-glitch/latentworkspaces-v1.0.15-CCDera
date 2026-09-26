@@ -1,55 +1,44 @@
 @echo off
-setlocal enabledelayedexpansion
-title LATENT // Launcher & Setup Sequencer
+setlocal
+title Latent Studio
+rem Run Latent Studio from source. Most people should use the installer from the
+rem Releases page instead; this is for running the code directly.
 
-:: Navigate to the directory where this batch file is located
 cd /d "%~dp0"
 
-:: 1. Check if Python is installed
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo ================================================================
-    echo [ERROR] Python was not found on your system!
-    echo ================================================================
-    echo LATENT requires Python 3.10 or higher.
+rem 1. Find Python 3.9+ (prefer the py launcher that python.org installs)
+set "PY="
+where py >nul 2>&1 && py -3 -c "import sys; sys.exit(sys.version_info < (3, 9))" >nul 2>&1 && set "PY=py -3"
+if not defined PY (
+    where python >nul 2>&1 && python -c "import sys; sys.exit(sys.version_info < (3, 9))" >nul 2>&1 && set "PY=python"
+)
+if not defined PY (
+    echo Latent Studio needs Python 3.9 or newer.
     echo.
-    echo Please download and install Python from the official site.
-    echo IMPORTANT: Make sure to check the box "Add Python to PATH" 
-    echo during installation.
-    echo.
-    echo Opening Python download page in your browser...
+    echo Install it from https://www.python.org/downloads/
+    echo and tick "Add python.exe to PATH" during setup.
     start "" "https://www.python.org/downloads/"
-    echo.
     pause
-    exit /b
+    exit /b 1
 )
 
-:: 2. Check and install missing dependencies
-echo Checking required libraries...
-python -c "import cv2, numpy, PIL, watchdog" >nul 2>&1
+rem 2. Private environment next to the app, so nothing is installed system-wide
+if not exist ".venv\Scripts\python.exe" (
+    echo First run: setting up Latent Studio. This takes a minute...
+    %PY% -m venv .venv || goto :fail
+)
+".venv\Scripts\python.exe" -c "import cv2, numpy, PIL" >nul 2>&1
 if errorlevel 1 (
-    echo ================================================================
-    echo Missing libraries detected. Starting automatic installation...
-    echo ================================================================
-    python -m pip install -r requirements.txt
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Dependency installation failed!
-        echo Please ensure you are connected to the internet and try running 
-        echo this batch file as an Administrator.
-        echo.
-        pause
-        exit /b
-    )
-    echo Dependencies successfully installed!
+    ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -q -r requirements.txt || goto :fail
 )
 
-:: 3. Launch the application
-echo Starting LATENT...
-start "" pythonw.exe latent.py
-if errorlevel 1 (
-    echo [WARNING] pythonw.exe failed to start. Falling back to console mode...
-    python.exe latent.py
-)
+rem 3. Launch without a console window
+start "" ".venv\Scripts\pythonw.exe" -m latent %*
+exit /b 0
 
-exit
+:fail
+echo.
+echo Setup failed. Check your internet connection and try again.
+echo If it keeps failing, delete the .venv folder next to this file and retry.
+pause
+exit /b 1
