@@ -73,7 +73,7 @@ Every push builds Windows, macOS and Linux packages in GitHub Actions (downloada
 To publish downloads for everyone:
 
 1. Bump `__version__` in `latent/__init__.py`.
-2. Tag and push: `git tag v2.0.0 && git push origin v2.0.0`
+2. Either push a tag (`git tag v2.1.0 && git push origin v2.1.0`) or push a commit whose message contains `[release]`.
 
 The workflow attaches the installer, portable zip, macOS and Linux builds to a GitHub Release. The download links above always point at the newest release.
 
