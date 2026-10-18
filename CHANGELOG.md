@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.2.0 — design polish from the reference layout
+
+* **Grid:** 20px gutters throughout. A 1px `#434446` frame around the viewport, with cells inset 5px and spaced 7px. The light scrollbar sits between the viewport and the controls on every screen. The top boxes (y 20–259) and bottom boxes (279–1060) line up exactly with the viewport frame.
+* **Colour:** a pure black ground, Illustrator greys for every line (`#434446`) and label (`#58595b`), and one process yellow (`#fff200`) for selection, active state and SAVE.
+* **Readouts:** larger readouts in your wording (`PATH:`, `FILE:`, `SIZE:`, `FILTER:`, `SPEC:`), with the actions tucked into the foot of the box.
+* **Interaction states:**
+  * Sliders: the caption and thumb lighten on hover, the thumb and value turn yellow while dragging, and a changed value reads near-white.
+  * Buttons: the outline and text lighten on hover and the fill darkens on press.
+  * Cells: they lighten on hover.
+* **Cleanup:** removed the viewport's left and bottom scrollbars (drag to pan) and the double borders inside the curve and wheel sections.
+
+## 2.1.0 — original interface restored
+
+The 2.0 interface drifted away from the hand-made LATENT design. 2.1 brings the original look back on top of the 2.0 engine:
+
+* Your 1920×1080 grid is back: 20px black margin, the viewport, and the #080808 620px control column.
+* Courier New everywhere. Grey 1px-outlined buttons (NAVIGATE, BACK, SAVE in #fff200), bordered readout boxes and `[ BRACKETED ]` section titles.
+* Light-grey Illustrator scrollbars on the viewport edges and at the far right, plus the ◧ compare button in the viewport corner.
+* The five-column explorer with file names inside the cells, and the adjacent, numbered 5×3 emulsion board with a #ffcc00 selection frame.
+* The original wording is back: MOUNT TARGET, FILE ID, ALLOCATION, ACTIVE LOG, SPEC, SCOPE MODE, GEOMETRY CONTROLS and [ APPLY TRANSFORMS ].
+* The original slider names and profile descriptions, the thin-line histogram you toggle by clicking it, and colour wheels stacked vertically.
+* Removed from 2.0: the logo header, step tabs, status bar, tooltips, yellow filled buttons and collapsible sections.
+* Kept from 2.0: every bug fix, the tone curve, undo/redo, crop & rotate, zoom/pan and background export.
+
 ## 2.0.0 — ground-up rework
 
 v1 was a single 2,850-line file. v2 splits it into an image engine with no UI code (`latent/imaging`), stage views (`latent/ui`), and a small application shell, with automated tests and a release pipeline.

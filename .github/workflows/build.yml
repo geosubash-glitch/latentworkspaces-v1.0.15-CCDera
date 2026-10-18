@@ -110,19 +110,41 @@ jobs:
             dist/LatentStudio-*.zip
             dist/LatentStudio-*.tar.gz
 
+  # Publishes a GitHub Release (and creates the vX.Y.Z tag) either when a
+  # version tag is pushed or when a pushed commit message contains "[release]".
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[release]'))
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        id: version
+        run: echo "version=$(python3 -c 'import latent; print(latent.__version__)')" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          name: Latent Studio ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Latent Studio v${{ steps.version.outputs.version }}
+          make_latest: "true"
           generate_release_notes: true
+          body: |
+            ## Download
+
+            | System | File |
+            |---|---|
+            | **Windows 10/11** | **LatentStudio-Windows-Setup.exe** — double-click, Install. No admin rights needed. |
+            | Windows, no install | LatentStudio-Windows-Portable.zip — Extract All, run `Latent Studio.exe` |
+            | macOS (Apple Silicon) | LatentStudio-macOS.zip — unzip, drag to Applications, first launch right-click → Open |
+            | Linux x64 | LatentStudio-Linux-x64.tar.gz |
+
+            Windows may show "Windows protected your PC" because the installer is not code-signed: click **More info → Run anyway**.
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/CHANGELOG.md) for everything that changed.
           files: artifacts/*

@@ -1,14 +1,11 @@
-"""Custom Tk widgets drawn to match the Latent design language.
-
-Native ``tk.Button`` ignores background colours on macOS and ``ttk.Scale``
-cannot show a default-centred fill, so the controls here are drawn by hand.
-"""
+"""Widgets drawn in the LATENT console style (see theme.py)."""
 from __future__ import annotations
 
 import math
 import sys
 import tkinter as tk
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from tkinter import ttk
+from typing import Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -19,12 +16,13 @@ from ..imaging.pipeline import color_wheel_rgba, compute_spline_lut
 
 
 class UI:
-    """Shared fonts + pixel scale handed to every view."""
+    """Layout scale (relative to the 1920x1080 design) and fonts."""
 
     def __init__(self, root: tk.Misc):
         self.root = root
-        self.fonts = T.Fonts(root)
-        self.scale = T.ui_scale(root)
+        sw = root.winfo_screenwidth()
+        self.scale = max(0.6, min(2.5, sw / T.DESIGN_W))
+        self.fonts = T.Fonts(root, scale=max(0.85, min(1.5, self.scale)))
 
     def px(self, n: float) -> int:
         return int(round(n * self.scale))
@@ -42,26 +40,23 @@ def rgb_to_photo(rgb: np.ndarray) -> ImageTk.PhotoImage:
 # Mouse-wheel routing
 # --------------------------------------------------------------------------
 class WheelRouter:
-    """Sends wheel events to the scrollable area under the pointer.
-
-    Handles Windows (delta 120), macOS (small deltas) and X11 (Button-4/5).
-    """
+    """Sends wheel events to the scrollable area under the pointer
+    (Windows delta 120, macOS small deltas, X11 Button-4/5)."""
 
     def __init__(self, root: tk.Misc):
         self.root = root
         self.handlers: Dict[str, Callable[[float, tk.Event], None]] = {}
-        root.bind_all("<MouseWheel>", self._on_wheel, add="+")
-        root.bind_all("<Shift-MouseWheel>", self._on_wheel, add="+")
-        root.bind_all("<Button-4>", self._on_wheel, add="+")
-        root.bind_all("<Button-5>", self._on_wheel, add="+")
+        for seq in ("<MouseWheel>", "<Shift-MouseWheel>", "<Button-4>", "<Button-5>"):
+            root.bind_all(seq, self._on_wheel, add="+")
 
     def register(self, widget: tk.Misc, handler: Callable[[float, tk.Event], None]) -> None:
         self.handlers[str(widget)] = handler
 
     def _on_wheel(self, event: tk.Event):
-        if getattr(event, "num", None) == 4:
+        num = getattr(event, "num", None)
+        if num == 4:
             notches = 1.0
-        elif getattr(event, "num", None) == 5:
+        elif num == 5:
             notches = -1.0
         elif sys.platform == "darwin":
             notches = float(event.delta)
@@ -85,154 +80,95 @@ class WheelRouter:
 # Buttons
 # --------------------------------------------------------------------------
 class Button(tk.Label):
-    STYLES = {
-        "primary": (T.ACCENT, T.ON_ACCENT, T.ACCENT_HOVER, T.ON_ACCENT, T.ACCENT),
-        "secondary": (T.BG_RAISED, T.TEXT, T.BG_HOVER, T.TEXT_HI, T.LINE_STRONG),
-        "ghost": (T.BG_PANEL, T.TEXT_DIM, T.BG_HOVER, T.TEXT_HI, T.BG_PANEL),
-        "toolbar": (T.BG_VIEW, T.TEXT_DIM, T.BG_HOVER, T.TEXT_HI, T.BG_VIEW),
-    }
+    """Outlined console button.
 
-    def __init__(self, master, ui: UI, text: str, command: Optional[Callable] = None, style: str = "secondary",
-                 font=None, padx: int = 14, pady: int = 7, tooltip: Optional[str] = None, bg_override=None, **kw):
-        bg, fg, hbg, hfg, border = self.STYLES[style]
-        if bg_override:
-            bg = border = bg_override
-        self._ui = ui
-        self._colors = (bg, fg, hbg, hfg, border)
+    Rest: grey outline and text. Hover: outline and text lighten.
+    Press: fill darkens. ``accent`` sets the text colour (SAVE is yellow).
+    """
+
+    def __init__(self, master, ui: UI, text: str, command: Optional[Callable] = None,
+                 accent: Optional[str] = None, outline: Optional[str] = None, font=None, **kw):
+        self._fg = accent or T.G55
+        self._outline = outline or T.LINE
         self._command = command
         self._enabled = True
         self._active = False
-        super().__init__(master, text=text, bg=bg, fg=fg, font=font or ui.fonts.mono_bold,
-                         padx=ui.px(padx), pady=ui.px(pady), cursor="hand2", bd=0,
-                         highlightthickness=1, highlightbackground=border, highlightcolor=border, **kw)
-        self.bind("<Enter>", self._enter)
-        self.bind("<Leave>", self._leave)
-        self.bind("<ButtonPress-1>", self._press)
+        self._hover = False
+        kw.setdefault("padx", ui.px(10))
+        kw.setdefault("pady", ui.px(5))
+        super().__init__(master, text=text, bg=T.BG_BUTTON, fg=self._fg, font=font or ui.fonts.button,
+                         cursor="hand2", bd=0, highlightthickness=1, highlightbackground=self._outline,
+                         highlightcolor=self._outline, **kw)
+        self.bind("<Enter>", lambda e: self._set_hover(True))
+        self.bind("<Leave>", lambda e: self._set_hover(False))
+        self.bind("<ButtonPress-1>", lambda e: self._enabled and self.config(bg=T.BG_BUTTON_PRESS))
         self.bind("<ButtonRelease-1>", self._release)
-        if tooltip:
-            Tooltip(self, ui, tooltip)
 
-    def _paint(self, hover: bool):
-        bg, fg, hbg, hfg, border = self._colors
+    def _set_hover(self, on: bool):
+        self._hover = on
+        self._paint()
+
+    def _paint(self):
         if not self._enabled:
-            if bg == T.ACCENT:  # a disabled call-to-action must not look clickable
-                self.config(bg=T.BG_RAISED, fg=T.TEXT_FAINT, highlightbackground=T.LINE, cursor="arrow")
-            else:
-                self.config(bg=bg, fg=T.TEXT_FAINT, highlightbackground=border, cursor="arrow")
-        elif self._active:
-            self.config(bg=T.ACCENT_DIM if bg != T.ACCENT else T.ACCENT_HOVER, fg=T.TEXT_HI if bg != T.ACCENT else T.ON_ACCENT,
-                        highlightbackground=T.ACCENT, cursor="hand2")
-        else:
-            self.config(bg=hbg if hover else bg, fg=hfg if hover else fg, highlightbackground=border, cursor="hand2")
-
-    def _enter(self, _e):
-        self._paint(True)
-
-    def _leave(self, _e):
-        self._paint(False)
-
-    def _press(self, _e):
-        if self._enabled:
-            self.config(bg=T.BG_INPUT if self._colors[0] != T.ACCENT else T.ACCENT_DIM)
+            self.config(bg=T.BG_BUTTON, fg="#2e2f30", highlightbackground="#2e2f30", cursor="arrow")
+            return
+        lit = self._hover or self._active
+        accent = self._fg not in (T.G55,)
+        self.config(bg=T.BG_BUTTON, cursor="hand2",
+                    fg=self._fg if accent else (T.G10 if lit else T.G55),
+                    highlightbackground=(T.YELLOW if self._active else T.G35) if lit else self._outline)
 
     def _release(self, e):
         if not self._enabled:
             return
-        inside = 0 <= e.x < self.winfo_width() and 0 <= e.y < self.winfo_height()
-        self._paint(inside)
-        if inside and self._command:
+        self._paint()
+        if 0 <= e.x < self.winfo_width() and 0 <= e.y < self.winfo_height() and self._command:
             self._command()
 
     def set_enabled(self, enabled: bool):
         self._enabled = enabled
-        self._paint(False)
+        self._paint()
 
     def set_active(self, active: bool):
         self._active = active
-        self._paint(False)
-
-    def set_text(self, text: str):
-        self.config(text=text)
+        self._paint()
 
 
-class Tooltip:
-    def __init__(self, widget: tk.Widget, ui: UI, text: str, delay: int = 450):
-        self.widget, self.ui, self.text, self.delay = widget, ui, text, delay
-        self._after = None
-        self._tip: Optional[tk.Toplevel] = None
-        widget.bind("<Enter>", self._schedule, add="+")
-        widget.bind("<Leave>", self._hide, add="+")
-        widget.bind("<ButtonPress>", self._hide, add="+")
+# --------------------------------------------------------------------------
+# Boxes
+# --------------------------------------------------------------------------
+class Box(tk.Frame):
+    """Section with a bracketed caption: ``[ ADJUSTMENTS ]``."""
 
-    def _schedule(self, _e=None):
-        self._cancel()
-        self._after = self.widget.after(self.delay, self._show)
-
-    def _cancel(self):
-        if self._after:
-            self.widget.after_cancel(self._after)
-            self._after = None
-
-    def _show(self):
-        if self._tip or not self.widget.winfo_exists():
-            return
-        x = self.widget.winfo_rootx()
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + self.ui.px(6)
-        tip = tk.Toplevel(self.widget)
-        tip.wm_overrideredirect(True)
-        tip.configure(bg=T.LINE_STRONG)
-        tk.Label(tip, text=self.text, bg=T.BG_RAISED, fg=T.TEXT, font=self.ui.fonts.body_small,
-                 padx=self.ui.px(8), pady=self.ui.px(4), justify="left").pack(padx=1, pady=1)
-        tip.update_idletasks()
-        sw = self.widget.winfo_screenwidth()
-        x = min(x, sw - tip.winfo_reqwidth() - 4)
-        tip.wm_geometry(f"+{x}+{y}")
-        self._tip = tip
-
-    def _hide(self, _e=None):
-        self._cancel()
-        if self._tip:
-            self._tip.destroy()
-            self._tip = None
-
-
-class Segmented(tk.Frame):
-    """Row of mutually exclusive options."""
-
-    def __init__(self, master, ui: UI, options: Sequence[Tuple[str, str]], value: str,
-                 command: Callable[[str], None], bg=T.BG_PANEL):
+    def __init__(self, master, ui: UI, title: Optional[str] = None, title_color: str = T.TEXT, bg=T.BG):
         super().__init__(master, bg=bg)
-        self._buttons: Dict[str, Button] = {}
-        self._command = command
-        for key, label in options:
-            b = Button(self, ui, label, command=lambda k=key: self.select(k, notify=True), style="ghost",
-                       font=ui.fonts.label, padx=8, pady=3)
-            b.pack(side="left", padx=(0, ui.px(2)))
-            self._buttons[key] = b
-        self.select(value)
+        if title:
+            self.caption = tk.Label(self, text=f"[ {title.upper()} ]", bg=bg, fg=title_color, font=ui.fonts.label, anchor="w")
+            self.caption.pack(fill="x", pady=(0, ui.px(6)))
+        self.frame = tk.Frame(self, bg=bg, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE)
+        self.frame.pack(fill="x")
+        self.body = tk.Frame(self.frame, bg=bg)
+        self.body.pack(fill="x", padx=ui.px(12), pady=ui.px(12))
 
-    def select(self, key: str, notify: bool = False):
-        for k, b in self._buttons.items():
-            b.set_active(k == key)
-        if notify:
-            self._command(key)
+    def set_title(self, title: str):
+        self.caption.config(text=f"[ {title.upper()} ]")
 
 
 # --------------------------------------------------------------------------
 # Slider
 # --------------------------------------------------------------------------
 class Slider(tk.Frame):
-    """Labelled slider with a fill that grows from the default value.
+    """Caption, trough with a grip thumb, value at the right.
 
-    * drag or click the track to set
-    * double-click the track or label to reset to default
-    * click the value to type an exact number
+    States: hover lightens caption and thumb; dragging turns the thumb
+    yellow; a value away from its default reads near-white.
+    Double-click resets to default; click the value to type a number.
     """
 
     def __init__(self, master, ui: UI, label: str, minimum: float, maximum: float, default: float,
                  value: Optional[float] = None, kind: str = "float", decimals: Optional[int] = None,
                  on_change: Optional[Callable[[float], None]] = None,
-                 on_begin: Optional[Callable[[], None]] = None, bg=T.BG_PANEL):
+                 on_begin: Optional[Callable[[], None]] = None, bg=T.BG):
         super().__init__(master, bg=bg)
         self.ui, self.minimum, self.maximum, self.default, self.kind = ui, float(minimum), float(maximum), float(default), kind
         span = self.maximum - self.minimum
@@ -240,26 +176,30 @@ class Slider(tk.Frame):
         self.on_change, self.on_begin = on_change, on_begin
         self.value = self._coerce(default if value is None else value)
         self._entry: Optional[tk.Entry] = None
+        self._hover = False
+        self._dragging = False
 
-        head = tk.Frame(self, bg=bg)
-        head.pack(fill="x")
-        self.name_lbl = tk.Label(head, text=label.upper(), bg=bg, fg=T.TEXT_DIM, font=ui.fonts.label, anchor="w")
-        self.name_lbl.pack(side="left")
-        self.value_lbl = tk.Label(head, text="", bg=bg, fg=T.TEXT, font=ui.fonts.value, anchor="e", cursor="xterm")
+        self.name_lbl = tk.Label(self, text=label.upper(), bg=bg, fg=T.TEXT, font=ui.fonts.label, anchor="w")
+        self.name_lbl.pack(fill="x")
+        row = tk.Frame(self, bg=bg)
+        row.pack(fill="x", pady=(ui.px(3), 0))
+        self.value_lbl = tk.Label(row, text="", bg=bg, fg=T.G55, font=ui.fonts.value, anchor="e", width=6, cursor="xterm")
         self.value_lbl.pack(side="right")
-        self.canvas = tk.Canvas(self, height=ui.px(18), bg=bg, highlightthickness=0, bd=0, cursor="hand2")
-        self.canvas.pack(fill="x", pady=(ui.px(2), 0))
+        self.canvas = tk.Canvas(row, height=ui.px(16), bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.canvas.pack(side="left", fill="x", expand=True, padx=(0, ui.px(12)))
 
         self.canvas.bind("<Configure>", lambda e: self._draw())
         self.canvas.bind("<ButtonPress-1>", self._press)
-        self.canvas.bind("<B1-Motion>", self._drag)
+        self.canvas.bind("<B1-Motion>", lambda e: self.set(self._v_for(e.x), notify=True))
+        self.canvas.bind("<ButtonRelease-1>", self._release)
         self.canvas.bind("<Double-Button-1>", lambda e: self.reset(notify=True))
+        for w in (self, self.name_lbl, self.canvas, self.value_lbl):
+            w.bind("<Enter>", lambda e: self._set_hover(True), add="+")
+            w.bind("<Leave>", lambda e: self._set_hover(False), add="+")
         self.name_lbl.bind("<Double-Button-1>", lambda e: self.reset(notify=True))
         self.value_lbl.bind("<Button-1>", self._edit)
-        Tooltip(self.name_lbl, ui, "Double-click to reset")
-        self._refresh_label()
+        self._refresh()
 
-    # value helpers
     def _coerce(self, v: float) -> float:
         v = min(self.maximum, max(self.minimum, float(v)))
         return float(int(round(v))) if self.kind == "int" else v
@@ -267,58 +207,62 @@ class Slider(tk.Frame):
     def _fmt(self, v: float) -> str:
         return f"{v:.{self.decimals}f}"
 
+    def _thumb_w(self) -> int:
+        return self.ui.px(22)
+
     def _x_for(self, v: float) -> float:
-        w = max(self.canvas.winfo_width(), 10)
-        pad = self.ui.px(7)
-        return pad + (v - self.minimum) / (self.maximum - self.minimum) * (w - 2 * pad)
+        w = max(self.canvas.winfo_width(), 20)
+        tw = self._thumb_w()
+        return tw / 2 + (v - self.minimum) / (self.maximum - self.minimum) * (w - tw)
 
     def _v_for(self, x: float) -> float:
-        w = max(self.canvas.winfo_width(), 10)
-        pad = self.ui.px(7)
-        t = (x - pad) / max(1.0, w - 2 * pad)
+        w = max(self.canvas.winfo_width(), 20)
+        tw = self._thumb_w()
+        t = (x - tw / 2) / max(1.0, w - tw)
         return self.minimum + max(0.0, min(1.0, t)) * (self.maximum - self.minimum)
 
     def _draw(self):
         c = self.canvas
         c.delete("all")
-        h = c.winfo_height() or self.ui.px(18)
-        w = c.winfo_width()
-        cy = h // 2
-        pad = self.ui.px(7)
-        c.create_line(pad, cy, w - pad, cy, fill=T.LINE_STRONG, width=max(2, self.ui.px(2)))
-        x0, x1 = self._x_for(self.default), self._x_for(self.value)
-        changed = abs(self.value - self.default) > 1e-9
-        if changed:
-            c.create_line(x0, cy, x1, cy, fill=T.ACCENT, width=max(2, self.ui.px(2)))
-        c.create_line(x0, cy - self.ui.px(4), x0, cy + self.ui.px(4), fill=T.LINE_FOCUS, width=1)
-        r = self.ui.px(6)
-        c.create_oval(x1 - r, cy - r, x1 + r, cy + r, fill=T.TEXT_HI if changed else T.TEXT,
-                      outline=T.BG_PANEL, width=max(1, self.ui.px(2)))
+        w, h = c.winfo_width(), c.winfo_height() or self.ui.px(16)
+        lit = self._hover or self._dragging
+        c.create_rectangle(0, 0, w - 1, h - 1, fill=T.BG, outline=T.G35 if lit else T.LINE)
+        x, tw = self._x_for(self.value), self._thumb_w()
+        thumb = T.YELLOW if self._dragging else (T.G10 if self._hover else T.G55)
+        c.create_rectangle(x - tw / 2, 2, x + tw / 2, h - 3, fill=T.BG, outline=thumb)
+        for k in (-3, 0, 3):
+            gx = x + self.ui.px(k)
+            c.create_line(gx, h * 0.3, gx, h * 0.7, fill=thumb)
 
-    def _refresh_label(self):
+    def _refresh(self):
         changed = abs(self.value - self.default) > 1e-9
-        self.value_lbl.config(text=self._fmt(self.value), fg=T.ACCENT if changed else T.TEXT_DIM)
-        self.name_lbl.config(fg=T.TEXT if changed else T.TEXT_DIM)
+        lit = self._hover or self._dragging
+        self.value_lbl.config(text=self._fmt(self.value), fg=T.YELLOW if self._dragging else (T.G10 if changed else T.G55))
+        self.name_lbl.config(fg=T.G35 if lit else T.TEXT)
         self._draw()
 
-    # interaction
+    def _set_hover(self, on: bool):
+        if on != self._hover:
+            self._hover = on
+            self._refresh()
+
     def _press(self, e):
         if self.on_begin:
             self.on_begin()
-        self._set_from_x(e.x)
+        self._dragging = True
+        self.set(self._v_for(e.x), notify=True)
+        self._refresh()
 
-    def _drag(self, e):
-        self._set_from_x(e.x)
-
-    def _set_from_x(self, x):
-        self.set(self._v_for(x), notify=True)
+    def _release(self, _e):
+        self._dragging = False
+        self._refresh()
 
     def set(self, v: float, notify: bool = False):
         v = self._coerce(v)
         if abs(v - self.value) < 1e-12:
             return
         self.value = v
-        self._refresh_label()
+        self._refresh()
         if notify and self.on_change:
             self.on_change(v)
 
@@ -332,11 +276,11 @@ class Slider(tk.Frame):
     def _edit(self, _e=None):
         if self._entry is not None:
             return
-        e = tk.Entry(self.value_lbl.master, bg=T.BG_INPUT, fg=T.TEXT_HI, insertbackground=T.TEXT_HI,
-                     font=self.ui.fonts.value, bd=0, highlightthickness=1, highlightcolor=T.ACCENT,
-                     highlightbackground=T.LINE_STRONG, justify="right", width=8)
+        e = tk.Entry(self.value_lbl.master, bg=T.BG, fg=T.G10, insertbackground=T.G10, font=self.ui.fonts.value,
+                     bd=0, highlightthickness=1, highlightbackground=T.YELLOW, highlightcolor=T.YELLOW,
+                     justify="right", width=6)
         e.insert(0, self._fmt(self.value))
-        e.place(in_=self.value_lbl, relx=1.0, rely=0.5, anchor="e")
+        e.place(in_=self.value_lbl, relwidth=1.0, relheight=1.0)
         e.focus_set()
         e.select_range(0, "end")
         self._entry = e
@@ -366,114 +310,43 @@ class Slider(tk.Frame):
 
 
 # --------------------------------------------------------------------------
-# Sections & scrolling
+# Scrolling column with the light-grey scrollbar
 # --------------------------------------------------------------------------
-class Section(tk.Frame):
-    def __init__(self, master, ui: UI, title: str, on_reset: Optional[Callable] = None, open_: bool = True,
-                 bg=T.BG_PANEL):
-        super().__init__(master, bg=bg)
-        self.ui = ui
-        self._open = open_
-        head = tk.Frame(self, bg=bg, cursor="hand2")
-        head.pack(fill="x", pady=(ui.px(10), ui.px(6)))
-        self.chev = tk.Label(head, text="▾" if open_ else "▸", bg=bg, fg=T.TEXT_DIM, font=ui.fonts.mono_bold, width=2, anchor="w")
-        self.chev.pack(side="left")
-        self.title = tk.Label(head, text=title.upper(), bg=bg, fg=T.TEXT_HI, font=ui.fonts.mono_bold, anchor="w")
-        self.title.pack(side="left")
-        for w in (head, self.chev, self.title):
-            w.bind("<Button-1>", lambda e: self.toggle())
-        if on_reset:
-            r = tk.Label(head, text="RESET", bg=bg, fg=T.TEXT_FAINT, font=ui.fonts.micro, cursor="hand2")
-            r.pack(side="right")
-            r.bind("<Enter>", lambda e: r.config(fg=T.ACCENT))
-            r.bind("<Leave>", lambda e: r.config(fg=T.TEXT_FAINT))
-            r.bind("<Button-1>", lambda e: on_reset())
-        tk.Frame(self, bg=T.LINE, height=1).pack(fill="x")
-        self.body = tk.Frame(self, bg=bg)
-        if open_:
-            self.body.pack(fill="x", pady=(ui.px(8), ui.px(4)))
-
-    def toggle(self):
-        self._open = not self._open
-        self.chev.config(text="▾" if self._open else "▸")
-        if self._open:
-            self.body.pack(fill="x", pady=(self.ui.px(8), self.ui.px(4)))
-        else:
-            self.body.pack_forget()
-
-
 class ScrollPanel(tk.Frame):
-    """Vertically scrolling container with a slim scrollbar."""
-
-    def __init__(self, master, ui: UI, router: WheelRouter, bg=T.BG_PANEL):
+    def __init__(self, master, ui: UI, router: WheelRouter, scrollbar_parent=None, bg=T.BG):
         super().__init__(master, bg=bg)
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
-        self.bar = tk.Canvas(self, width=ui.px(6), bg=bg, highlightthickness=0, bd=0)
+        self.bar = ttk.Scrollbar(scrollbar_parent or self, orient="vertical", command=self.canvas.yview)
         self.inner = tk.Frame(self.canvas, bg=bg)
         self._win = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.bar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.bar.pack(side="right", fill="y", padx=(ui.px(4), 0))
-        self.inner.bind("<Configure>", lambda e: self._update())
-        self.canvas.bind("<Configure>", lambda e: (self.canvas.itemconfigure(self._win, width=e.width), self._update()))
-        self.bar.bind("<ButtonPress-1>", self._bar_press)
-        self.bar.bind("<B1-Motion>", self._bar_drag)
-        router.register(self, lambda n, e: self.scroll(-n))
-        self._drag_off = 0.0
-
-    def _update(self):
-        self.canvas.configure(scrollregion=(0, 0, self.inner.winfo_reqwidth(), self.inner.winfo_reqheight()))
-        self._draw_bar()
-
-    def _draw_bar(self):
-        self.bar.delete("all")
-        first, last = self.canvas.yview()
-        if last - first >= 0.999:
-            return
-        h = self.bar.winfo_height()
-        w = self.bar.winfo_width()
-        self.bar.create_rectangle(0, first * h, w, last * h, fill=T.LINE_STRONG, outline="")
-
-    def scroll(self, notches: float):
-        self.canvas.yview_scroll(int(round(notches * 3)) or (1 if notches > 0 else -1), "units")
-        self._draw_bar()
-
-    def _bar_press(self, e):
-        first, last = self.canvas.yview()
-        h = max(1, self.bar.winfo_height())
-        pos = e.y / h
-        if first <= pos <= last:
-            self._drag_off = pos - first
-        else:
-            self._drag_off = (last - first) / 2
-            self._bar_drag(e)
-
-    def _bar_drag(self, e):
-        h = max(1, self.bar.winfo_height())
-        self.canvas.yview_moveto(max(0.0, e.y / h - self._drag_off))
-        self._draw_bar()
+        if scrollbar_parent is None:
+            self.bar.pack(side="right", fill="y")
+        self.inner.bind("<Configure>", lambda e: self.canvas.configure(
+            scrollregion=(0, 0, self.inner.winfo_reqwidth(), self.inner.winfo_reqheight())))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+        router.register(self, lambda n, e: self.canvas.yview_scroll(-int(round(n * 3)) or (-1 if n > 0 else 1), "units"))
 
     def to_top(self):
         self.canvas.yview_moveto(0)
-        self._draw_bar()
 
 
 # --------------------------------------------------------------------------
-# Colour wheels
+# Colour wheels (stacked, as in the original workbench)
 # --------------------------------------------------------------------------
 class ColorWheels(tk.Canvas):
     LABELS = ("SHADOWS", "MIDTONES", "HIGHLIGHTS")
 
-    def __init__(self, master, ui: UI, on_begin: Callable[[], None], on_change: Callable[[int, Tuple[float, float]], None],
-                 bg=T.BG_PANEL):
+    def __init__(self, master, ui: UI, on_begin: Callable[[], None], on_change: Callable[[int, Tuple[float, float]], None]):
         self.ui = ui
-        self.radius = ui.px(46)
-        self.gap = ui.px(14)
-        width = 3 * 2 * self.radius + 2 * self.gap + ui.px(8)
-        super().__init__(master, width=width, height=2 * self.radius + ui.px(42), bg=bg, highlightthickness=0, bd=0)
+        self.radius = ui.px(55)
+        self.pitch = ui.px(140)
+        super().__init__(master, width=ui.px(360), height=self.pitch * 3 + ui.px(20), bg=T.BG,
+                         highlightthickness=0, bd=0)
         self.on_begin, self.on_change = on_begin, on_change
         self.positions: List[Tuple[float, float]] = [(0.0, 0.0)] * 3
-        rgba = color_wheel_rgba(self.radius, 170)
-        self._photo = ImageTk.PhotoImage(Image.fromarray(rgba, "RGBA"))
+        self._photo = ImageTk.PhotoImage(Image.fromarray(color_wheel_rgba(self.radius, 200), "RGBA"))
         self._active = None
         self.bind("<Configure>", lambda e: self.draw())
         self.bind("<ButtonPress-1>", self._press)
@@ -481,38 +354,27 @@ class ColorWheels(tk.Canvas):
         self.bind("<ButtonRelease-1>", lambda e: setattr(self, "_active", None))
         self.bind("<Double-Button-1>", self._reset_at)
         self.bind("<Button-3>", self._reset_at)
-        Tooltip(self, ui, "Drag to tint · double-click to reset a wheel")
 
     def _centers(self):
-        total = 3 * 2 * self.radius + 2 * self.gap
-        left = (max(self.winfo_width(), total) - total) / 2 + self.radius
-        cy = self.radius + self.ui.px(4)
-        return [(left + i * (2 * self.radius + self.gap), cy) for i in range(3)]
+        cx = max(self.winfo_width(), self.ui.px(360)) / 2
+        return [(cx, self.ui.px(75) + i * self.pitch) for i in range(3)]
 
     def draw(self):
         self.delete("all")
+        r = self.radius
         for i, (cx, cy) in enumerate(self._centers()):
-            r = self.radius
             self.create_image(cx - r, cy - r, image=self._photo, anchor="nw")
-            self.create_oval(cx - r, cy - r, cx + r, cy + r, outline=T.LINE_STRONG)
-            self.create_line(cx - 4, cy, cx + 4, cy, fill="#2a2a2a")
-            self.create_line(cx, cy - 4, cx, cy + 4, fill="#2a2a2a")
+            self.create_oval(cx - r, cy - r, cx + r, cy + r, outline=T.LINE)
+            self.create_line(cx - 5, cy, cx + 5, cy, fill="#222222")
+            self.create_line(cx, cy - 5, cx, cy + 5, fill="#222222")
             px, py = self.positions[i]
             tx, ty = cx + px * r, cy + py * r
-            changed = abs(px) + abs(py) > 1e-6
-            if changed:
-                self.create_line(cx, cy, tx, ty, fill=T.TEXT_HI)
-            k = self.ui.px(5)
-            self.create_oval(tx - k, ty - k, tx + k, ty + k, fill=T.TEXT_HI, outline="#000000", width=2)
-            self.create_text(cx, cy + r + self.ui.px(12), text=self.LABELS[i], fill=T.TEXT if changed else T.TEXT_DIM,
-                             font=self.ui.fonts.label)
-            amt = int(round(math.hypot(px, py) * 100))
-            self.create_text(cx, cy + r + self.ui.px(26), text=f"{amt}%" if changed else "—", fill=T.ACCENT if changed else T.TEXT_FAINT,
-                             font=self.ui.fonts.micro)
+            self.create_oval(tx - 3, ty - 3, tx + 3, ty + 3, fill="#ffffff", outline="#000000")
+            self.create_text(cx, cy + r + self.ui.px(15), text=self.LABELS[i], fill=T.TEXT, font=self.ui.fonts.label)
 
     def _hit(self, x, y):
         for i, (cx, cy) in enumerate(self._centers()):
-            if math.hypot(x - cx, y - cy) <= self.radius + self.ui.px(8):
+            if abs(y - cy) <= self.pitch / 2:
                 return i
         return None
 
@@ -557,12 +419,10 @@ class ColorWheels(tk.Canvas):
 class ToneCurve(tk.Canvas):
     MAX_POINTS = 12
 
-    def __init__(self, master, ui: UI, on_begin: Callable[[], None], on_change: Callable[[List[Tuple[float, float]]], None],
-                 bg=T.BG_PANEL):
+    def __init__(self, master, ui: UI, on_begin: Callable[[], None], on_change: Callable[[List[Tuple[float, float]]], None]):
         self.ui = ui
-        size = ui.px(260)
-        super().__init__(master, width=size, height=size, bg=T.BG_VIEW, highlightthickness=1,
-                         highlightbackground=T.LINE, bd=0, cursor="crosshair")
+        super().__init__(master, width=ui.px(360), height=ui.px(280), bg=T.BG, highlightthickness=0,
+                         bd=0, cursor="crosshair")
         self.on_begin, self.on_change = on_begin, on_change
         self.points: List[Tuple[float, float]] = [(0.0, 0.0), (255.0, 255.0)]
         self.hist: Optional[np.ndarray] = None
@@ -573,12 +433,10 @@ class ToneCurve(tk.Canvas):
         self.bind("<ButtonRelease-1>", lambda e: setattr(self, "_drag_idx", None))
         self.bind("<Double-Button-1>", self._remove)
         self.bind("<Button-3>", self._remove)
-        Tooltip(self, ui, "Click to add a point · drag to shape · double-click a point to remove")
 
-    # coordinate helpers
     def _geom(self):
         w, h = max(self.winfo_width(), 20), max(self.winfo_height(), 20)
-        pad = self.ui.px(8)
+        pad = self.ui.px(10)
         return pad, w - 2 * pad, h - 2 * pad
 
     def _to_screen(self, p):
@@ -600,23 +458,23 @@ class ToneCurve(tk.Canvas):
             for i, v in enumerate(hv):
                 pts += [pad + i / 255.0 * w, pad + h - v * h * 0.9]
             pts += [pad + w, pad + h]
-            self.create_polygon(pts, fill="#161616", outline="")
+            self.create_polygon(pts, fill="#161617", outline="")
         for i in range(1, 4):
-            self.create_line(pad + w * i / 4, pad, pad + w * i / 4, pad + h, fill=T.LINE)
-            self.create_line(pad, pad + h * i / 4, pad + w, pad + h * i / 4, fill=T.LINE)
-        self.create_line(pad, pad + h, pad + w, pad, fill=T.LINE_STRONG, dash=(2, 3))
+            self.create_line(pad + w * i / 4, pad, pad + w * i / 4, pad + h, fill="#1c1c1c")
+            self.create_line(pad, pad + h * i / 4, pad + w, pad + h * i / 4, fill="#1c1c1c")
+        self.create_rectangle(pad, pad, pad + w, pad + h, outline=T.LINE)
+        self.create_line(pad, pad + h, pad + w, pad, fill=T.LINE, dash=(2, 3))
         lut = compute_spline_lut(self.points)
         coords = []
-        steps = 64
-        for i in range(steps + 1):
-            x = i * 255 / steps
+        for i in range(65):
+            x = i * 255 / 64
             coords += list(self._to_screen((x, float(lut[int(round(x))]))))
-        self.create_line(*coords, fill=T.TEXT_HI, width=max(1, self.ui.px(1.5)), smooth=True)
+        self.create_line(*coords, fill=T.G10, smooth=True)
         r = self.ui.px(4)
         for i, p in enumerate(self.points):
             sx, sy = self._to_screen(p)
-            fill = T.ACCENT if i == self._drag_idx else T.BG_VIEW
-            self.create_rectangle(sx - r, sy - r, sx + r, sy + r, fill=fill, outline=T.TEXT_HI)
+            self.create_rectangle(sx - r, sy - r, sx + r, sy + r, fill=T.YELLOW if i == self._drag_idx else T.BG,
+                                  outline=T.YELLOW if i == self._drag_idx else T.G35)
 
     def _nearest(self, x, y):
         tol = self.ui.px(9)
@@ -654,9 +512,7 @@ class ToneCurve(tk.Canvas):
         elif i == len(self.points) - 1:
             vx = 255.0
         else:
-            lo = self.points[i - 1][0] + 4
-            hi = self.points[i + 1][0] - 4
-            vx = max(lo, min(hi, vx))
+            vx = max(self.points[i - 1][0] + 4, min(self.points[i + 1][0] - 4, vx))
         self.points[i] = (vx, vy)
         self.draw()
         self.on_change(list(self.points))
