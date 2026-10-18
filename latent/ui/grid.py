@@ -22,18 +22,21 @@ class ThumbGrid(tk.Frame):
                  on_select: Callable[[int], None], on_activate: Callable[[int], None],
                  on_hover: Optional[Callable[[Optional[int]], None]] = None,
                  on_visible: Optional[Callable[[int, int], None]] = None,
-                 cols: int = 5, rows: Optional[int] = None, gap: float = 7, numbered: bool = False):
-        super().__init__(master, bg=T.BG_VIEW)
+                 cols: int = 5, rows: Optional[int] = None, gap: float = T.CELL_GAP, numbered: bool = False,
+                 bar: Optional[ttk.Scrollbar] = None):
+        super().__init__(master, bg=T.BG)
         self.ui = ui
         self.on_select, self.on_activate, self.on_hover, self.on_visible = on_select, on_activate, on_hover, on_visible
         self.cols, self.rows_fixed, self.numbered = cols, rows, numbered
         self.gap = ui.px(gap)
         self.label_h = ui.px(22)
 
-        self.canvas = tk.Canvas(self, bg=T.BG_VIEW, highlightthickness=0, bd=0)
-        self.bar = ttk.Scrollbar(self, orient="vertical", command=self._scroll_cmd)
+        self.canvas = tk.Canvas(self, bg=T.BG, highlightthickness=0, bd=0)
+        self.bar = bar  # lives in the app's shared scrollbar column
+        if bar is not None:
+            bar.configure(command=self._scroll_cmd)
         self.canvas.configure(yscrollcommand=self._bar_set)
-        self.canvas.pack(side="left", fill="both", expand=True)
+        self.canvas.pack(fill="both", expand=True)
 
         self.count = 0
         self.titles: List[str] = []
@@ -111,10 +114,6 @@ class ThumbGrid(tk.Frame):
         total = rows * self.cell_h + max(0, rows - 1) * g
         c.configure(scrollregion=(0, 0, W, max(H, total)))
         self._laid_out = True
-        if total > H + 1:
-            self.bar.pack(side="right", fill="y")
-        else:
-            self.bar.pack_forget()
         for i in range(self.count):
             self._create_cell(i)
         self._notify_visible()
@@ -126,7 +125,7 @@ class ThumbGrid(tk.Frame):
         return x, y, x + self.cell_w, y + self.cell_h
 
     def _image_box(self) -> Tuple[int, int]:
-        inset = self.ui.px(10)
+        inset = self.ui.px(12)
         return self.cell_w - 2 * inset, self.cell_h - 2 * self.label_h
 
     def _create_cell(self, i: int):
@@ -134,12 +133,12 @@ class ThumbGrid(tk.Frame):
         x0, y0, x1, y1 = self.cell_rect(i)
         tag = f"cell{i}"
         f = self.ui.fonts.cell
-        pad = self.ui.px(6)
-        c.create_text(x0 + pad, y1 - pad, text=self._elide(self.titles[i].upper()), anchor="sw", fill=T.TEXT_CELL,
+        pad = self.ui.px(5)
+        c.create_text(x0 + pad, y1 - pad, text=self._elide(self.titles[i].upper()), anchor="sw", fill=T.TEXT,
                       font=f, tags=(tag, f"title{i}"))
         if self.numbered:
-            c.create_text(x0 + pad, y0 + pad, text=f"{i + 1:02d}", anchor="nw", fill=T.TEXT_CELL, font=f, tags=(tag,))
-        c.create_rectangle(x0, y0, x1 - 1, y1 - 1, outline=T.CELL, width=1, tags=(tag, f"border{i}"))
+            c.create_text(x0 + pad, y0 + pad, text=f"{i + 1:02d}", anchor="nw", fill=T.TEXT, font=f, tags=(tag,))
+        c.create_rectangle(x0, y0, x1 - 1, y1 - 1, outline=T.LINE, width=1, tags=(tag, f"border{i}"))
         self._draw_cell_image(i)
         self._style_border(i)
 
@@ -156,8 +155,7 @@ class ThumbGrid(tk.Frame):
         bw, bh = self._image_box()
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
         bgr = self.images.get(i)
-        if bgr is None:
-            c.create_text(cx, cy, text="LOADING...", fill="#323232", font=self.ui.fonts.cell, tags=(f"cell{i}", f"img{i}"))
+        if bgr is None:  # empty cell until the thumbnail arrives
             return
         cached = self._photos.get(i)
         if cached is None or cached[0] != (bw, bh):
@@ -174,11 +172,14 @@ class ThumbGrid(tk.Frame):
         if i >= self.count:
             return
         if i == self.selected:
-            self.canvas.itemconfigure(f"border{i}", outline=T.SELECT, width=2)
+            self.canvas.itemconfigure(f"border{i}", outline=T.SELECT, width=max(1, self.ui.px(1.5)))
+            self.canvas.itemconfigure(f"title{i}", fill=T.G35)
         elif i == self.hovered:
-            self.canvas.itemconfigure(f"border{i}", outline=T.TEXT_HI, width=1)
+            self.canvas.itemconfigure(f"border{i}", outline=T.G35, width=1)
+            self.canvas.itemconfigure(f"title{i}", fill=T.G35)
         else:
-            self.canvas.itemconfigure(f"border{i}", outline=T.CELL, width=1)
+            self.canvas.itemconfigure(f"border{i}", outline=T.LINE, width=1)
+            self.canvas.itemconfigure(f"title{i}", fill=T.TEXT)
         self.canvas.tag_raise(f"border{i}")
 
     # ------------------------------------------------------------ interact
@@ -231,7 +232,8 @@ class ThumbGrid(tk.Frame):
         self._notify_visible()
 
     def _bar_set(self, first, last):
-        self.bar.set(first, last)
+        if self.bar is not None:
+            self.bar.set(first, last)
 
     def _on_wheel(self, notches: float, _e):
         self.canvas.yview_scroll(-int(round(notches * 2)) or (-1 if notches > 0 else 1), "units")

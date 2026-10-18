@@ -10,7 +10,7 @@ from .. import theme as T
 from ..imaging.filters import PROFILES, FILTER_REGISTRY, PROFILE_KEYS
 from ..imaging.pipeline import apply_profile, make_proxy
 from ..workers import Channel
-from .base import View, preview_box, readout_box
+from .base import PreviewBox, ReadoutBox, View, gap
 from .grid import ThumbGrid
 from .widgets import Button, bgr_to_photo
 
@@ -27,26 +27,24 @@ class LooksView(View):
         self._hover = None
         self._preview_cache = {}
 
-        # viewport: 5 x 3 board of adjacent, numbered cells
+        # viewport: 5 x 3 board of numbered cells filling the frame
         self.grid = ThumbGrid(self.viewport, ui, app.router, on_select=lambda i: self._refresh(),
                               on_activate=self._on_activate, on_hover=self._on_hover,
-                              cols=5, rows=3, gap=0, numbered=True)
+                              cols=5, rows=3, numbered=True, bar=self.bar)
         self.grid.pack(fill="both", expand=True)
         self.grid.set_items([p.key for p in PROFILES])
         self.grid.set_selected(0, ensure_visible=False)
 
-        p = tk.Frame(self.panel, bg=T.BG_PANEL)
-        p.pack(fill="both", expand=True, padx=(ui.px(40), 0), pady=(ui.px(20), 0))
-        box, self.readout, self.notice_lbl = readout_box(p, ui, 158)
-        box.pack(fill="x")
-        row = tk.Frame(p, bg=T.BG_PANEL)
-        row.pack(fill="x", pady=(ui.px(20), ui.px(20)))
-        Button(row, ui, "BACK", command=lambda: app.go("library")).pack(side="left", fill="x", expand=True, ipady=ui.px(4))
-        Button(row, ui, "WORKBENCH", command=self._develop).pack(side="left", fill="x", expand=True, padx=(ui.px(20), 0), ipady=ui.px(4))
-        self.preview_frame, self.preview, self.preview_name = preview_box(p, ui)
-        self.preview_frame.pack(fill="both", expand=True)
+        self.top = ReadoutBox(self.panel, ui)
+        self.top.pack(fill="x")
+        self.readout, self.notice_lbl = self.top.text, self.top.notice
+        Button(self.top.actions, ui, "WORKBENCH", command=self._develop).pack(side="right")
+        Button(self.top.actions, ui, "BACK", command=lambda: app.go("library")).pack(side="right", padx=(0, ui.px(10)))
+        self.previewbox = PreviewBox(self.panel, ui)
+        self.previewbox.pack(fill="both", expand=True, pady=(gap(ui), 0))
+        self.preview, self.preview_name = self.previewbox.image, self.previewbox.name
         self.preview.bind("<Double-Button-1>", lambda e: self._develop())
-        self.preview_frame.bind("<Configure>", lambda e: self._update_preview())
+        self.previewbox.bind("<Configure>", lambda e: self._update_preview())
 
     # --------------------------------------------------------------- data
     def on_photo_changed(self):
@@ -79,8 +77,7 @@ class LooksView(View):
         return PROFILE_KEYS[i if i is not None else 0]
 
     def _box_size(self):
-        return (max(self.preview.winfo_width() - self.ui.px(30), 50),
-                max(self.preview.winfo_height() - self.ui.px(30), 50))
+        return self.previewbox.inner_size()
 
     def _update_preview(self):
         if self._preview_base is None:
@@ -121,8 +118,9 @@ class LooksView(View):
         key = self._current_key()
         prof = FILTER_REGISTRY[key]
         path = self.app.session.path or ""
-        self.readout.config(text=f"ACTIVE LOG: {os.path.basename(path).upper()}\nFILTER: {key}\n\nSPEC: {prof.description}")
-        self.preview_name.config(text=os.path.basename(path).upper())
+        stem = os.path.splitext(os.path.basename(path))[0].upper()
+        self.readout.config(text=f"FILE:{stem}\nFILTER:{key}\n\nSPEC:{prof.description}")
+        self.preview_name.config(text=f"{stem} // {key}")
         self._update_preview()
 
     # ----------------------------------------------------------- interact

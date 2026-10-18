@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import time
 from collections import OrderedDict
 from typing import List, Optional
 
@@ -12,7 +11,7 @@ import tkinter as tk
 from .. import theme as T
 from ..imaging import io as imgio
 from ..workers import Channel
-from .base import View, preview_box, readout_box
+from .base import PreviewBox, ReadoutBox, View, gap
 from .grid import ThumbGrid
 from .widgets import Button, bgr_to_photo
 
@@ -37,21 +36,21 @@ class LibraryView(View):
 
         # viewport: five columns of square cells
         self.grid = ThumbGrid(self.viewport, ui, app.router, on_select=lambda i: self._update_selection_panel(),
-                              on_activate=self._on_activate, on_visible=self._request_thumbs, cols=5, gap=7)
+                              on_activate=self._on_activate, on_visible=self._request_thumbs, cols=5, bar=self.bar)
         self.grid.pack(fill="both", expand=True)
-        self.empty = tk.Label(self.viewport, text="NO COMPATIBLE IMAGE FILES FOUND IN DIRECTORY", bg=T.BG_VIEW,
-                              fg="#646464", font=ui.fonts.value)
+        self.empty = tk.Label(self.viewport, text="NO COMPATIBLE IMAGE FILES FOUND IN DIRECTORY", bg=T.BG,
+                              fg=T.TEXT, font=ui.fonts.value)
 
-        # control column
-        p = tk.Frame(self.panel, bg=T.BG_PANEL)
-        p.pack(fill="both", expand=True, padx=(ui.px(40), 0), pady=(ui.px(20), 0))
-        box, self.readout, self.notice_lbl = readout_box(p, ui, 158)
-        box.pack(fill="x")
-        Button(p, ui, "NAVIGATE", command=app.choose_folder).pack(fill="x", pady=(ui.px(20), ui.px(20)), ipady=ui.px(4))
-        self.preview_frame, self.preview, self.preview_name = preview_box(p, ui)
-        self.preview_frame.pack(fill="both", expand=True)
+        # control column: top box (readout + NAVIGATE), bottom box (preview)
+        self.top = ReadoutBox(self.panel, ui)
+        self.top.pack(fill="x")
+        self.readout, self.notice_lbl = self.top.text, self.top.notice
+        Button(self.top.actions, ui, "NAVIGATE", command=app.choose_folder).pack(side="right")
+        self.previewbox = PreviewBox(self.panel, ui)
+        self.previewbox.pack(fill="both", expand=True, pady=(gap(ui), 0))
+        self.preview, self.preview_name = self.previewbox.image, self.previewbox.name
         self.preview.bind("<Double-Button-1>", lambda e: self._open_selected())
-        self.preview_frame.bind("<Configure>", lambda e: self._update_preview())
+        self.previewbox.bind("<Configure>", lambda e: self._update_preview())
 
         self.load_folder()
 
@@ -66,7 +65,7 @@ class LibraryView(View):
         self.files = imgio.list_images(folder)
         self._signature = self._folder_signature(self.files)
         paths = [f.path for f in self.files]
-        self.grid.set_items([f.name for f in self.files], reset_scroll=not same_folder)
+        self.grid.set_items([os.path.splitext(f.name)[0] for f in self.files], reset_scroll=not same_folder)
         for i, f in enumerate(self.files):
             hit = self.cache.get(f.path)
             if hit and hit[0] == f.mtime:
@@ -149,21 +148,17 @@ class LibraryView(View):
             self.app.open_photo(self.selected_path)
 
     def _update_selection_panel(self):
-        folder = self.app.folder
-        path_txt = folder if len(folder) < 52 else "..." + folder[-49:]
-        text = f"MOUNT TARGET:\n{path_txt}\n\n"
+        folder = os.path.normpath(self.app.folder)
+        text = f"PATH:\n{folder if len(folder) < 60 else '...' + folder[-57:]}\n\n"
         i = self.grid.selected
         if i is None or i >= len(self.files):
             n = len(self.files)
-            text += f"VOLUME MOUNTED. {n} FILE{'S' if n != 1 else ''}.\nSELECT SOURCE FILE ELEMENT."
+            text += f"FILES:{n}"
         else:
             f = self.files[i]
-            d = self.dims.get(f.path)
-            text += f"FILE ID: {f.name.upper()}\nALLOCATION: {f.size_bytes / (1024 * 1024):.2f} MB"
-            if d:
-                text += f"\nDIMENSIONS: {d[0]} x {d[1]}"
+            text += f"FILE:{os.path.splitext(f.name)[0].upper()}\nSIZE:{f.size_bytes / (1024 * 1024):.1f} mb"
             if self.app.session.has_edits_for(f.path):
-                text += "\nSTATE: GRADED (SESSION)"
+                text += "\nSTATE:GRADED"
         self.readout.config(text=text)
         self._update_preview()
 
@@ -174,7 +169,7 @@ class LibraryView(View):
             self.preview.config(image="")
             self.preview_name.config(text="")
             return
-        self.preview_name.config(text=f.name.upper())
+        self.preview_name.config(text=os.path.splitext(f.name)[0].upper())
         hit = self.cache.get(f.path)
         if hit:
             self._show_preview(hit[1])
@@ -191,8 +186,7 @@ class LibraryView(View):
         self.preview_channel.submit(job, done)
 
     def _show_preview(self, bgr):
-        bw = max(self.preview.winfo_width() - self.ui.px(30), 50)
-        bh = max(self.preview.winfo_height() - self.ui.px(30), 50)
+        bw, bh = self.previewbox.inner_size()
         h, w = bgr.shape[:2]
         s = min(bw / w, bh / h)
         img = cv2.resize(bgr, (max(1, int(w * s)), max(1, int(h * s))), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.0 — design polish from the reference layout
+
+* **Grid:** 20px gutters throughout. A 1px `#434446` frame around the viewport, with cells inset 5px and spaced 7px. The light scrollbar sits between the viewport and the controls on every screen. The top boxes (y 20–259) and bottom boxes (279–1060) line up exactly with the viewport frame.
+* **Colour:** a pure black ground, Illustrator greys for every line (`#434446`) and label (`#58595b`), and one process yellow (`#fff200`) for selection, active state and SAVE.
+* **Readouts:** larger readouts in your wording (`PATH:`, `FILE:`, `SIZE:`, `FILTER:`, `SPEC:`), with the actions tucked into the foot of the box.
+* **Interaction states:**
+  * Sliders: the caption and thumb lighten on hover, the thumb and value turn yellow while dragging, and a changed value reads near-white.
+  * Buttons: the outline and text lighten on hover and the fill darkens on press.
+  * Cells: they lighten on hover.
+* **Cleanup:** removed the viewport's left and bottom scrollbars (drag to pan) and the double borders inside the curve and wheel sections.
+
 ## 2.1.0 — original interface restored
 
 The 2.0 interface drifted away from the hand-made LATENT design. 2.1 brings the original look back on top of the 2.0 engine:

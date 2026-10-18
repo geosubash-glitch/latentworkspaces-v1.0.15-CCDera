@@ -4,7 +4,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-BG = (8, 8, 8)
+BG = (0, 0, 0)
 GRID = (30, 30, 30)
 LABEL = (90, 90, 90)
 
@@ -27,10 +27,10 @@ def histogram(bgr: np.ndarray, w: int, h: int) -> np.ndarray:
               (cv2.calcHist([gray], [0], None, [256], [0, 256]).ravel(), (200, 200, 200))]  # luma
     # ignore the two end bins when scaling so clipped frames stay readable
     peak = max(max(t[1:255].max() for t, _ in traces), 1.0)
-    img = np.full((h, w, 3), 8, np.uint8)
+    img = np.full((h, w, 3), 0, np.uint8)
     for i in range(1, 4):
         x = int(w * i / 4)
-        cv2.line(img, (x, 0), (x, h), (20, 20, 20), 1)
+        cv2.line(img, (x, 0), (x, h), (28, 28, 30), 1)
     xs = np.linspace(0, 255, w)
     for hist, color in traces:
         vals = np.interp(xs, np.arange(256), np.minimum(hist / peak, 1.0))

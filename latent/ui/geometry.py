@@ -48,7 +48,7 @@ class GeometryDialog:
         side = tk.Frame(win, bg=T.BG_PANEL, width=ui.px(380))
         side.pack(side="right", fill="y", padx=(0, ui.px(20)), pady=ui.px(20))
         side.pack_propagate(False)
-        frame = tk.Frame(win, bg=T.BG_VIEW, highlightthickness=1, highlightbackground=T.BOX)
+        frame = tk.Frame(win, bg=T.BG_VIEW, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE)
         frame.pack(side="left", fill="both", expand=True, padx=ui.px(20), pady=ui.px(20))
         self.canvas = tk.Canvas(frame, bg=T.BG_VIEW, highlightthickness=0, bd=0)
         self.canvas.pack(fill="both", expand=True)
@@ -96,7 +96,7 @@ class GeometryDialog:
 
         box = Box(body, ui, "Resize (Output)")
         box.pack(fill="x", pady=ui.px(5))
-        self.size_hint = tk.Label(box.body, text="", bg=T.BG_PANEL, fg=T.TEXT_LABEL, font=ui.fonts.value, anchor="w", justify="left")
+        self.size_hint = tk.Label(box.body, text="", bg=T.BG_PANEL, fg=T.TEXT, font=ui.fonts.value, anchor="w", justify="left")
         self.size_hint.pack(fill="x", pady=(0, ui.px(4)))
         row = tk.Frame(box.body, bg=T.BG_PANEL)
         row.pack(fill="x")
@@ -367,7 +367,7 @@ class GeometryDialog:
 
     def _update_size_hint(self):
         ow, oh = self._crop_pixels()
-        self.size_hint.config(text=f"Original Size: {self.full_w} x {self.full_h}\nCrop Size: {ow} x {oh}", fg=T.TEXT_LABEL)
+        self.size_hint.config(text=f"Original Size: {self.full_w} x {self.full_h}\nCrop Size: {ow} x {oh}", fg=T.TEXT)
 
     def _entry_enter(self):
         self.win.focus_set()

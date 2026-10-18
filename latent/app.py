@@ -145,26 +145,30 @@ class LatentApp:
             log.debug("icon not set", exc_info=True)
 
     def _build_shell(self):
-        """Original 1920x1080 grid: 20px margin, viewport, 620px control column,
-        and a 20px strip at the far right for the control column's scrollbar."""
+        """1920x1080 grid: 20 | framed viewport 1240 | 20 | scrollbar 20 | 20 | controls 580 | 20.
+
+        The scrollbar column is shared: each stage puts its own scrollbar there
+        (explorer grid, or the workbench controls)."""
         ui = self.ui
-        m = ui.px(20)
+        g = ui.px(T.GUTTER)
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
 
-        self.viewport_host = tk.Frame(self.root, bg=T.BG_VIEW)
-        self.viewport_host.grid(row=0, column=0, sticky="nsew", padx=m, pady=m)
+        frame = tk.Frame(self.root, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE)
+        frame.grid(row=0, column=0, sticky="nsew", padx=(g, g), pady=g)
+        self.viewport_host = tk.Frame(frame, bg=T.BG)
+        self.viewport_host.pack(fill="both", expand=True, padx=ui.px(T.CELL_INSET), pady=ui.px(T.CELL_INSET))
+
+        self.scroll_strip = tk.Frame(self.root, bg=T.SCROLL_TROUGH, width=g)
+        self.scroll_strip.grid(row=0, column=1, sticky="ns")
+        self.scroll_strip.pack_propagate(False)
 
         sw = self.root.winfo_screenwidth()
-        self.panel_width = max(ui.px(400), min(ui.px(620), int(sw * 620 / T.DESIGN_W)))
-        self.panel_host = tk.Frame(self.root, bg=T.BG_PANEL, width=self.panel_width)
-        self.panel_host.grid(row=0, column=1, sticky="ns", pady=m)
+        self.panel_width = max(ui.px(380), min(ui.px(580), int(sw * 580 / T.DESIGN_W)))
+        self.panel_host = tk.Frame(self.root, bg=T.BG, width=self.panel_width)
+        self.panel_host.grid(row=0, column=2, sticky="ns", padx=(g, g), pady=g)
         self.panel_host.grid_propagate(False)
         self.panel_host.pack_propagate(False)
-
-        self.scroll_strip = tk.Frame(self.root, bg=T.BG_VIEW, width=m)
-        self.scroll_strip.grid(row=0, column=2, sticky="ns")
-        self.scroll_strip.pack_propagate(False)
 
     # ------------------------------------------------------------ navigation
     def can_enter(self, stage: str) -> bool:
@@ -301,11 +305,11 @@ class LatentApp:
                 row=row, column=0, columnspan=2, sticky="w", pady=(ui.px(10) if row else 0, ui.px(4)))
             row += 1
             for action, keys in items:
-                tk.Label(body, text=action.upper(), bg=T.BG_PANEL, fg=T.TEXT_LABEL, font=ui.fonts.label).grid(
+                tk.Label(body, text=action.upper(), bg=T.BG_PANEL, fg=T.TEXT, font=ui.fonts.label).grid(
                     row=row, column=0, sticky="w", padx=(ui.px(8), ui.px(32)))
-                tk.Label(body, text=keys.upper(), bg=T.BG_PANEL, fg=T.TEXT, font=ui.fonts.value).grid(row=row, column=1, sticky="w")
+                tk.Label(body, text=keys.upper(), bg=T.BG_PANEL, fg=T.G35, font=ui.fonts.value).grid(row=row, column=1, sticky="w")
                 row += 1
-        Button(body, ui, "CLOSE", command=win.destroy, font=ui.fonts.button_small).grid(row=row, column=1, sticky="e", pady=(ui.px(16), 0))
+        Button(body, ui, "CLOSE", command=win.destroy).grid(row=row, column=1, sticky="e", pady=(ui.px(16), 0))
         win.bind("<Escape>", lambda e: win.destroy())
         self._center(win)
         win.focus_set()

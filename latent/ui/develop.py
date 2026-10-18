@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
 from typing import Dict, List, Optional
 
 import cv2
@@ -15,7 +15,7 @@ from ..imaging import scopes
 from ..imaging.filters import FILTER_REGISTRY
 from ..imaging.pipeline import EditState, Geometry, apply_geometry, develop
 from ..workers import Channel
-from .base import View
+from .base import View, gap
 from .widgets import Box, Button, ColorWheels, ScrollPanel, Slider, ToneCurve, bgr_to_photo, rgb_to_photo
 
 # (label, state attribute, display min, display max, neutral state value).
@@ -59,18 +59,10 @@ class DevelopView(View):
     # =================================================================== UI
     def _build_viewport(self):
         ui = self.ui
-        sb = ui.px(20)
-        self.vbar = ttk.Scrollbar(self.viewport, orient="vertical", command=lambda *a: self._scrollbar("y", *a))
-        self.hbar = ttk.Scrollbar(self.viewport, orient="horizontal", command=lambda *a: self._scrollbar("x", *a))
-        self.canvas = tk.Canvas(self.viewport, bg=T.BG_VIEW, highlightthickness=0, bd=0)
-        self.viewport.grid_columnconfigure(1, weight=1)
-        self.viewport.grid_rowconfigure(0, weight=1)
-        self.vbar.grid(row=0, column=0, sticky="ns")
-        self.canvas.grid(row=0, column=1, sticky="nsew")
-        self.hbar.grid(row=1, column=1, sticky="ew")
-        tk.Frame(self.viewport, bg=T.SCROLL_EDGE, width=sb, height=sb).grid(row=1, column=0)
-        self.compare_btn = Button(self.viewport, ui, "◧", font=ui.fonts.value, padx=ui.px(4), pady=0, outline=T.BG_VIEW)
-        self.compare_btn.place(relx=1.0, rely=1.0, x=-1, y=-sb - 1, anchor="se")
+        self.canvas = tk.Canvas(self.viewport, bg=T.BG, highlightthickness=0, bd=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.compare_btn = Button(self.viewport, ui, "◧", font=ui.fonts.value, padx=ui.px(5), pady=ui.px(1))
+        self.compare_btn.place(relx=1.0, rely=1.0, anchor="se")
         self.compare_btn.bind("<ButtonPress-1>", lambda e: self.set_compare(True), add="+")
         self.compare_btn.bind("<ButtonRelease-1>", lambda e: self.set_compare(False), add="+")
 
@@ -83,60 +75,71 @@ class DevelopView(View):
 
     def _build_panel(self):
         ui = self.ui
-        top = tk.Frame(self.panel, bg=T.BG_PANEL)
-        top.pack(fill="x", padx=ui.px(20), pady=(ui.px(20), 0))
-        self.scope = tk.Canvas(top, height=ui.px(196), bg=T.BG_PANEL, highlightthickness=1,
-                               highlightbackground=T.SCOPE_LINE, bd=0, cursor="hand2")
-        self.scope.pack(fill="x")
+        pad = ui.px(13)
+
+        # top box: scope (click to toggle) with its caption and notices at the foot
+        top = tk.Frame(self.panel, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE, height=ui.px(T.TOP_BOX_H))
+        top.pack(fill="x")
+        top.pack_propagate(False)
+        foot = tk.Frame(top, bg=T.BG)
+        foot.pack(side="bottom", fill="x", padx=pad, pady=(ui.px(6), ui.px(10)))
+        self.scope_lbl = tk.Label(foot, text=SCOPE_CAPTION[self.scope_mode], bg=T.BG, fg=T.TEXT, font=ui.fonts.label, cursor="hand2")
+        self.scope_lbl.pack(side="left")
+        self.scope_lbl.bind("<Button-1>", lambda e: self._toggle_scope())
+        self.notice_lbl = tk.Label(foot, text="", bg=T.BG, fg=T.YELLOW, font=ui.fonts.label)
+        self.notice_lbl.pack(side="right")
+        self.scope = tk.Canvas(top, bg=T.BG, highlightthickness=0, bd=0, cursor="hand2")
+        self.scope.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
         self.scope.bind("<Configure>", lambda e: self.request_render())
         self.scope.bind("<Button-1>", lambda e: self._toggle_scope())
-        cap = tk.Frame(top, bg=T.BG_PANEL)
-        cap.pack(fill="x", pady=(ui.px(4), ui.px(6)))
-        self.scope_lbl = tk.Label(cap, text=SCOPE_CAPTION[self.scope_mode], bg=T.BG_PANEL, fg=T.TEXT_LABEL, font=ui.fonts.label)
-        self.scope_lbl.pack(side="left")
-        self.notice_lbl = tk.Label(cap, text="", bg=T.BG_PANEL, fg=T.SELECT, font=ui.fonts.label)
-        self.notice_lbl.pack(side="right")
 
-        self.scroll = ScrollPanel(self.panel, ui, self.app.router, scrollbar_parent=self.app.scroll_strip)
-        self.scroll.pack(fill="both", expand=True, padx=ui.px(20))
+        # bottom box: command row + scrolling controls
+        bottom = tk.Frame(self.panel, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE)
+        bottom.pack(fill="both", expand=True, pady=(gap(ui), 0))
+        head = tk.Frame(bottom, bg=T.BG)
+        head.pack(fill="x", padx=pad, pady=pad)
+        Button(head, ui, "BACK", command=lambda: self.app.go("looks"), width=6).pack(side="left")
+        self.save_btn = Button(head, ui, "SAVE", command=self.export, accent=T.SAVE, width=6)
+        self.save_btn.pack(side="right")
+        self.title_lbl = tk.Label(head, text="", bg=T.BG, fg=T.G35, font=ui.fonts.title)
+        self.title_lbl.pack(side="left", fill="x", expand=True)
+        tk.Frame(bottom, bg=T.LINE, height=1).pack(fill="x")
+
+        self.scroll = ScrollPanel(bottom, ui, self.app.router, scrollbar_parent=self.app.scroll_strip)
+        self.scroll.bar.destroy()
+        self.scroll.bar = self.bar
+        self.bar.configure(command=self.scroll.canvas.yview)
+        self.scroll.canvas.configure(yscrollcommand=self.bar.set)
+        self.scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
         body = self.scroll.inner
 
-        head = tk.Frame(body, bg=T.BG_PANEL)
-        head.pack(fill="x", pady=(ui.px(4), ui.px(10)))
-        Button(head, ui, "BACK", command=lambda: self.app.go("looks"), width=8).pack(side="left")
-        self.save_btn = Button(head, ui, "SAVE", command=self.export, accent=T.SAVE, width=8)
-        self.save_btn.pack(side="right")
-        self.title_lbl = tk.Label(head, text="", bg=T.BG_PANEL, fg=T.TEXT_READ, font=ui.fonts.button)
-        self.title_lbl.pack(side="left", fill="x", expand=True)
-
         self.look_box = Box(body, ui)
-        self.look_box.pack(fill="x", pady=(0, ui.px(10)))
-
-        Button(body, ui, "CROP/ROTATE/RESIZE/WARP", command=self.open_geometry, font=ui.fonts.button_small).pack(
-            fill="x", pady=(ui.px(10), ui.px(10)), ipady=ui.px(4))
+        self.look_box.pack(fill="x")
+        Button(body, ui, "CROP/ROTATE/RESIZE/WARP", command=self.open_geometry).pack(
+            fill="x", pady=(gap(ui), 0), ipady=ui.px(3))
 
         box = Box(body, ui, "Tone Curve")
-        box.pack(fill="x", pady=ui.px(5))
+        box.pack(fill="x", pady=(gap(ui), 0))
         self.curve = ToneCurve(box.body, ui, on_begin=self.app.push_undo, on_change=self._on_curve)
-        self.curve.pack(pady=ui.px(5))
+        self.curve.pack()
 
         box = Box(body, ui, "3-Way Color Wheels")
-        box.pack(fill="x", pady=ui.px(5))
+        box.pack(fill="x", pady=(gap(ui), 0))
         self.wheels = ColorWheels(box.body, ui, on_begin=self.app.push_undo, on_change=self._on_wheel)
-        self.wheels.pack(pady=ui.px(5))
+        self.wheels.pack()
 
         self._slider_box(body, "Camera Calibration", CALIBRATION)
         self._slider_box(body, "Adjustments", ADJUSTMENTS)
-        tk.Frame(body, bg=T.BG_PANEL, height=ui.px(20)).pack(fill="x")
+        tk.Frame(body, bg=T.BG, height=pad).pack(fill="x")
 
     def _slider_box(self, parent, title, rows):
         box = Box(parent, self.ui, title)
-        box.pack(fill="x", pady=self.ui.px(5))
+        box.pack(fill="x", pady=(gap(self.ui), 0))
         for label, attr, lo, hi, neutral in rows:
             kind = "float" if attr == "sharpness" else "int"
             s = Slider(box.body, self.ui, label, lo, hi, 0.0, kind=kind, decimals=1 if kind == "float" else 0,
                        on_begin=self.app.push_undo, on_change=lambda v, a=attr, n=neutral: self._set_attr(a, v + n))
-            s.pack(fill="x", pady=(0, self.ui.px(6)))
+            s.pack(fill="x", pady=(0, self.ui.px(8)))
             s.neutral = neutral
             self.sliders[attr] = s
 
@@ -151,7 +154,7 @@ class DevelopView(View):
         for c in FILTER_REGISTRY[key].controls:
             s = Slider(body, self.ui, c.label, c.minimum, c.maximum, c.default, value=values[c.label], kind=c.kind,
                        on_begin=self.app.push_undo, on_change=lambda v, lbl=c.label: self._set_profile_param(lbl, v))
-            s.pack(fill="x", pady=(0, self.ui.px(6)))
+            s.pack(fill="x", pady=(0, self.ui.px(8)))
             self.profile_sliders[c.label] = s
         self._built_profile = key
 
@@ -252,8 +255,6 @@ class DevelopView(View):
         c.delete("all")
         cw, ch = c.winfo_width(), c.winfo_height()
         if img is None or cw < 10 or ch < 10:
-            self.vbar.set(0, 1)
-            self.hbar.set(0, 1)
             return
         h, w = img.shape[:2]
         self.zoom = min(self.zoom, self._max_zoom(img))
@@ -270,27 +271,8 @@ class DevelopView(View):
         interp = cv2.INTER_AREA if s < 1 else (cv2.INTER_NEAREST if s >= 3 else cv2.INTER_LINEAR)
         self._photo = bgr_to_photo(cv2.resize(img[y0:y1, x0:x1], (tw, th), interpolation=interp))
         c.create_image(int(cw / 2 - (cx - x0) * s), int(ch / 2 - (cy - y0) * s), image=self._photo, anchor="nw")
-        # light-grey scrollbars mirror the visible part of the frame
-        self.hbar.set(max(0.0, (cx - half_w) / w), min(1.0, (cx + half_w) / w))
-        self.vbar.set(max(0.0, (cy - half_h) / h), min(1.0, (cy + half_h) / h))
         zoomed = w * s > cw + 1 or h * s > ch + 1
         c.config(cursor="fleur" if zoomed else "")
-
-    def _scrollbar(self, axis, *args):
-        img = self._display_image()
-        if img is None or self.center is None:
-            return
-        h, w = img.shape[:2]
-        size = w if axis == "x" else h
-        s = self._fit_scale(img) * self.zoom
-        view = (self.canvas.winfo_width() if axis == "x" else self.canvas.winfo_height()) / s
-        i = 0 if axis == "x" else 1
-        if args[0] == "moveto":
-            self.center[i] = float(args[1]) * size + view / 2
-        elif args[0] == "scroll":
-            step = view * (0.9 if args[2] == "pages" else 0.1)
-            self.center[i] += int(args[1]) * step
-        self._redraw()
 
     def _zoom_to(self, zoom, anchor=None):
         img = self._display_image()
@@ -423,14 +405,12 @@ class DevelopView(View):
 
     def on_show(self):
         first_time = self._built_profile is None
-        self.scroll.bar.pack(fill="y", expand=True)
         self.sync_from_state()
         if first_time:
             self.scroll.to_top()
         self.canvas.focus_set()
 
     def on_hide(self):
-        self.scroll.bar.pack_forget()
         self.set_compare(False)
 
     def on_key(self, seq, e):
