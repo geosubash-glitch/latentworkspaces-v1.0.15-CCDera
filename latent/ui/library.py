@@ -41,11 +41,11 @@ class LibraryView(View):
         self.empty = tk.Label(self.viewport, text="NO COMPATIBLE IMAGE FILES FOUND IN DIRECTORY", bg=T.BG,
                               fg=T.TEXT, font=ui.fonts.value)
 
-        # control column: top box (readout + NAVIGATE), bottom box (preview)
+        # control column on the shared rows: readout | NAVIGATE | preview
         self.top = ReadoutBox(self.panel, ui)
         self.top.pack(fill="x")
         self.readout, self.notice_lbl = self.top.text, self.top.notice
-        Button(self.top.actions, ui, "NAVIGATE", command=app.choose_folder).pack(side="right")
+        Button(self.panel, ui, "NAVIGATE", command=app.choose_folder).pack(fill="x", pady=(gap(ui), 0))
         self.previewbox = PreviewBox(self.panel, ui)
         self.previewbox.pack(fill="both", expand=True, pady=(gap(ui), 0))
         self.preview, self.preview_name = self.previewbox.image, self.previewbox.name

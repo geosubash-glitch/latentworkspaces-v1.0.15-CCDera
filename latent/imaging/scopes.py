@@ -16,26 +16,34 @@ def _canvas(w: int, h: int) -> np.ndarray:
 
 
 def histogram(bgr: np.ndarray, w: int, h: int) -> np.ndarray:
-    """Thin R, G, B and luma traces on a dark grid (the original LATENT scope)."""
+    """Filled, translucent R/G/B areas with bright outlines over a grey luma
+    fill (as drawn in the workbench artboard)."""
     w, h = max(w, 32), max(h, 32)
     edge = max(bgr.shape[:2])
     small = bgr if edge <= 800 else cv2.resize(bgr, None, fx=800 / edge, fy=800 / edge, interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-    traces = [(cv2.calcHist([small], [2], None, [256], [0, 256]).ravel(), (255, 64, 64)),   # R
-              (cv2.calcHist([small], [1], None, [256], [0, 256]).ravel(), (64, 255, 64)),   # G
-              (cv2.calcHist([small], [0], None, [256], [0, 256]).ravel(), (64, 64, 255)),   # B
-              (cv2.calcHist([gray], [0], None, [256], [0, 256]).ravel(), (200, 200, 200))]  # luma
+    layers = [  # (hist, fill RGB, line RGB) drawn back to front
+        (cv2.calcHist([gray], [0], None, [256], [0, 256]).ravel(), (120, 122, 124), (170, 172, 174)),
+        (cv2.calcHist([small], [0], None, [256], [0, 256]).ravel(), (20, 70, 170), (40, 120, 255)),
+        (cv2.calcHist([small], [2], None, [256], [0, 256]).ravel(), (150, 30, 30), (240, 60, 60)),
+        (cv2.calcHist([small], [1], None, [256], [0, 256]).ravel(), (30, 120, 50), (70, 210, 90)),
+    ]
     # ignore the two end bins when scaling so clipped frames stay readable
-    peak = max(max(t[1:255].max() for t, _ in traces), 1.0)
-    img = np.full((h, w, 3), 0, np.uint8)
-    for i in range(1, 4):
-        x = int(w * i / 4)
-        cv2.line(img, (x, 0), (x, h), (28, 28, 30), 1)
+    peak = max(max(hh[1:255].max() for hh, _, _ in layers), 1.0)
+    img = np.zeros((h, w, 3), np.float32)
     xs = np.linspace(0, 255, w)
-    for hist, color in traces:
+    rows = np.arange(h, dtype=np.float32)[:, None]
+    tops = []
+    for hist, fill, _ in layers:
         vals = np.interp(xs, np.arange(256), np.minimum(hist / peak, 1.0))
-        pts = np.stack([np.arange(w), h - 2 - vals * (h - 10)], axis=1).astype(np.int32)
-        cv2.polylines(img, [pts], False, color, 1, cv2.LINE_AA)
+        top = h - 2 - vals * (h - 8)
+        tops.append(top)
+        mask = (rows >= top[None, :]).astype(np.float32)[..., None] * 0.45
+        img = img * (1 - mask) + np.array(fill, np.float32) * mask
+    img = np.clip(img, 0, 255).astype(np.uint8)
+    for top, (_, _, line) in zip(tops, layers):
+        pts = np.stack([np.arange(w), top], axis=1).astype(np.int32)
+        cv2.polylines(img, [pts], False, line, 2, cv2.LINE_AA)
     return img
 
 

@@ -61,10 +61,27 @@ class DevelopView(View):
         ui = self.ui
         self.canvas = tk.Canvas(self.viewport, bg=T.BG, highlightthickness=0, bd=0)
         self.canvas.pack(fill="both", expand=True)
-        self.compare_btn = Button(self.viewport, ui, "◧", font=ui.fonts.value, padx=ui.px(5), pady=ui.px(1))
+        # 25px before/after toggle in the frame's bottom-right corner
+        self.compare_btn = tk.Canvas(self.viewport, width=ui.px(25.34), height=ui.px(25.34), bg=T.BG,
+                                     highlightthickness=0, bd=0, cursor="hand2")
         self.compare_btn.place(relx=1.0, rely=1.0, anchor="se")
-        self.compare_btn.bind("<ButtonPress-1>", lambda e: self.set_compare(True), add="+")
-        self.compare_btn.bind("<ButtonRelease-1>", lambda e: self.set_compare(False), add="+")
+        # zoom control inside the image frame (bottom-left): - [slider] + FIT
+        zb = tk.Frame(self.viewport, bg=T.BG)
+        zb.place(x=0, rely=1.0, anchor="sw")
+        Button(zb, ui, "-", font=ui.fonts.label, width=25.34, height=25.34, command=lambda: self.zoom_step(1 / 1.25)).pack(side="left")
+        self.zoom_track = tk.Canvas(zb, width=ui.px(160), height=ui.px(25.34), bg=T.BG, highlightthickness=0, cursor="hand2")
+        self.zoom_track.pack(side="left")
+        self.zoom_track.bind("<Configure>", lambda e: self._draw_zoom())
+        self.zoom_track.bind("<ButtonPress-1>", self._zoom_drag)
+        self.zoom_track.bind("<B1-Motion>", self._zoom_drag)
+        Button(zb, ui, "+", font=ui.fonts.label, width=25.34, height=25.34, command=lambda: self.zoom_step(1.25)).pack(side="left")
+        self.zoom_lbl = Button(zb, ui, "FIT", font=ui.fonts.label, width=52, height=25.34, command=self.zoom_fit)
+        self.zoom_lbl.pack(side="left")
+        self.compare_btn.bind("<Configure>", lambda e: self._draw_compare_btn())
+        self.compare_btn.bind("<ButtonPress-1>", lambda e: self.set_compare(True))
+        self.compare_btn.bind("<ButtonRelease-1>", lambda e: self.set_compare(False))
+        self.compare_btn.bind("<Enter>", lambda e: self._draw_compare_btn(hover=True))
+        self.compare_btn.bind("<Leave>", lambda e: self._draw_compare_btn())
 
         self.canvas.bind("<Configure>", lambda e: self._redraw())
         self.canvas.bind("<ButtonPress-1>", self._pan_begin)
@@ -73,73 +90,105 @@ class DevelopView(View):
         self.canvas.bind("<Double-Button-1>", self._toggle_zoom_at)
         self.app.router.register(self.canvas, self._wheel_zoom)
 
+    def _zoom_limits(self):
+        img = self._display_image()
+        return 1.0, (self._max_zoom(img) if img is not None else 4.0)
+
+    def _draw_zoom(self):
+        c = self.zoom_track
+        c.delete("all")
+        w, h = c.winfo_width(), c.winfo_height()
+        lo, hi = self._zoom_limits()
+        t = 0.0 if hi <= lo else (self.zoom - lo) / (hi - lo)
+        pad, tw = self.ui.px(6), self.ui.px(10)
+        c.create_line(pad, h / 2, w - pad, h / 2, fill=T.LINE)
+        x = pad + t * (w - 2 * pad)
+        c.create_rectangle(x - tw / 2, h * 0.2, x + tw / 2, h * 0.8, outline=T.THUMB_LINE, fill=T.THUMB_FILL)
+        self.zoom_lbl.set_text("FIT" if self.zoom <= 1.001 else f"{self.zoom:.1f}x")
+
+    def _zoom_drag(self, e):
+        w, pad = self.zoom_track.winfo_width(), self.ui.px(6)
+        t = max(0.0, min(1.0, (e.x - pad) / max(1, w - 2 * pad)))
+        lo, hi = self._zoom_limits()
+        self._zoom_to(lo + t * (hi - lo))
+
+    def _draw_compare_btn(self, hover=False):
+        c, s = self.compare_btn, self.ui.px(25.34)
+        c.delete("all")
+        color = T.YELLOW if self.compare else (T.HOVER if hover else T.LINE)
+        c.create_rectangle(0, 0, s - 1, s - 1, outline=color, fill=T.BG)
+        k = s / 5.6
+        c.create_polygon(s * 0.2, s / 2 - k, s * 0.2 + k, s / 2, s * 0.2, s / 2 + k, fill=color, outline=color)
+        c.create_polygon(s * 0.8, s / 2 - k, s * 0.8 - k, s / 2, s * 0.8, s / 2 + k, fill=color, outline=color)
+
     def _build_panel(self):
         ui = self.ui
-        pad = ui.px(13)
+        g = gap(ui)
+        small_gap = ui.px(11)
 
-        # top box: scope (click to toggle) with its caption and notices at the foot
-        top = tk.Frame(self.panel, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE, height=ui.px(T.TOP_BOX_H))
+        # row 1 (20..210): scope, click to toggle histogram / waveform
+        top = tk.Frame(self.panel, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE,
+                       highlightcolor=T.LINE, height=ui.px(T.TOP_BOX_H), cursor="hand2")
         top.pack(fill="x")
         top.pack_propagate(False)
-        foot = tk.Frame(top, bg=T.BG)
-        foot.pack(side="bottom", fill="x", padx=pad, pady=(ui.px(6), ui.px(10)))
-        self.scope_lbl = tk.Label(foot, text=SCOPE_CAPTION[self.scope_mode], bg=T.BG, fg=T.TEXT, font=ui.fonts.label, cursor="hand2")
-        self.scope_lbl.pack(side="left")
-        self.scope_lbl.bind("<Button-1>", lambda e: self._toggle_scope())
-        self.notice_lbl = tk.Label(foot, text="", bg=T.BG, fg=T.YELLOW, font=ui.fonts.label)
-        self.notice_lbl.pack(side="right")
         self.scope = tk.Canvas(top, bg=T.BG, highlightthickness=0, bd=0, cursor="hand2")
-        self.scope.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
+        self.scope.pack(fill="both", expand=True, padx=ui.px(4), pady=ui.px(4))
         self.scope.bind("<Configure>", lambda e: self.request_render())
         self.scope.bind("<Button-1>", lambda e: self._toggle_scope())
+        self.scope_lbl = tk.Label(top, text=SCOPE_CAPTION[self.scope_mode], bg=T.BG, fg=T.TEXT, font=ui.fonts.label)
+        self.scope_lbl.place(x=ui.px(8), rely=1.0, y=-ui.px(6), anchor="sw")
+        self.scope_lbl.bind("<Button-1>", lambda e: self._toggle_scope())
+        self.notice_lbl = tk.Label(top, text="", bg=T.BG, fg=T.YELLOW, font=ui.fonts.label)
+        self.notice_lbl.place(relx=1.0, x=-ui.px(8), y=ui.px(6), anchor="ne")
 
-        # bottom box: command row + scrolling controls
-        bottom = tk.Frame(self.panel, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE)
-        bottom.pack(fill="both", expand=True, pady=(gap(ui), 0))
-        head = tk.Frame(bottom, bg=T.BG)
-        head.pack(fill="x", padx=pad, pady=pad)
-        Button(head, ui, "BACK", command=lambda: self.app.go("looks"), width=6).pack(side="left")
-        self.save_btn = Button(head, ui, "SAVE", command=self.export, accent=T.SAVE, width=6)
-        self.save_btn.pack(side="right")
-        self.title_lbl = tk.Label(head, text="", bg=T.BG, fg=T.G35, font=ui.fonts.title)
+        # row 2 (230..270): BACK | filter name | SAVE
+        bar = tk.Frame(self.panel, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE,
+                       highlightcolor=T.LINE, height=ui.px(T.BAR_H))
+        bar.pack(fill="x", pady=(g, 0))
+        bar.pack_propagate(False)
+        Button(bar, ui, "BACK", icon="back", width=100, height=30, command=lambda: self.app.go("looks")).pack(
+            side="left", padx=ui.px(4), pady=ui.px(4))
+        self.save_btn = Button(bar, ui, "SAVE", icon="menu", width=100, height=30, command=self._save_menu)
+        self.save_btn.pack(side="right", padx=ui.px(4), pady=ui.px(4))
+        self.title_lbl = tk.Label(bar, text="", bg=T.BG, fg=T.TEXT, font=ui.fonts.title)
         self.title_lbl.pack(side="left", fill="x", expand=True)
-        tk.Frame(bottom, bg=T.LINE, height=1).pack(fill="x")
 
-        self.scroll = ScrollPanel(bottom, ui, self.app.router, scrollbar_parent=self.app.scroll_strip)
-        self.scroll.bar.destroy()
-        self.scroll.bar = self.bar
-        self.bar.configure(command=self.scroll.canvas.yview)
-        self.scroll.canvas.configure(yscrollcommand=self.bar.set)
-        self.scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
+        # row 3 (290..1060): FILTER SLIDERS, CROP row, scrolling controls
+        content = tk.Frame(self.panel, bg=T.BG)
+        content.pack(fill="both", expand=True, pady=(g, 0))
+        self.look_box = Box(content, ui, "Filter Sliders")
+        self.look_box.pack(fill="x")
+        Button(content, ui, "CROP/ROTATE/RESIZE/WARP", command=self.open_geometry).pack(fill="x", pady=(small_gap, 0))
+
+        scroll_frame = tk.Frame(content, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE)
+        scroll_frame.pack(fill="both", expand=True, pady=(small_gap, 0))
+        self.scroll = ScrollPanel(scroll_frame, ui, self.app.router, self.bar)
+        self.scroll.pack(fill="both", expand=True, padx=ui.px(8), pady=(ui.px(2), 0))
         body = self.scroll.inner
 
-        self.look_box = Box(body, ui)
-        self.look_box.pack(fill="x")
-        Button(body, ui, "CROP/ROTATE/RESIZE/WARP", command=self.open_geometry).pack(
-            fill="x", pady=(gap(ui), 0), ipady=ui.px(3))
+        self._slider_group(body, "Camera Calibration", CALIBRATION)
+        self._slider_group(body, "Adjustments", ADJUSTMENTS)
+        self._caption(body, "Tone Curve")
+        self.curve = ToneCurve(body, ui, on_begin=self.app.push_undo, on_change=self._on_curve)
+        self.curve.pack(fill="x")
+        self._caption(body, "3-Way Color Wheels")
+        self.wheels = ColorWheels(body, ui, on_begin=self.app.push_undo, on_change=self._on_wheel)
+        self.wheels.pack(fill="x")
+        tk.Frame(body, bg=T.BG, height=g).pack(fill="x")
 
-        box = Box(body, ui, "Tone Curve")
-        box.pack(fill="x", pady=(gap(ui), 0))
-        self.curve = ToneCurve(box.body, ui, on_begin=self.app.push_undo, on_change=self._on_curve)
-        self.curve.pack()
+    def _caption(self, parent, text):
+        row = tk.Frame(parent, bg=T.BG)
+        row.pack(fill="x", pady=(self.ui.px(12), self.ui.px(10)))
+        tk.Label(row, text=text.upper(), bg=T.BG, fg=T.TEXT, font=self.ui.fonts.title).pack(side="left")
+        tk.Frame(row, bg=T.LINE, height=1).pack(side="left", fill="x", expand=True, padx=(self.ui.px(10), 0))
 
-        box = Box(body, ui, "3-Way Color Wheels")
-        box.pack(fill="x", pady=(gap(ui), 0))
-        self.wheels = ColorWheels(box.body, ui, on_begin=self.app.push_undo, on_change=self._on_wheel)
-        self.wheels.pack()
-
-        self._slider_box(body, "Camera Calibration", CALIBRATION)
-        self._slider_box(body, "Adjustments", ADJUSTMENTS)
-        tk.Frame(body, bg=T.BG, height=pad).pack(fill="x")
-
-    def _slider_box(self, parent, title, rows):
-        box = Box(parent, self.ui, title)
-        box.pack(fill="x", pady=(gap(self.ui), 0))
+    def _slider_group(self, parent, title, rows):
+        self._caption(parent, title)
         for label, attr, lo, hi, neutral in rows:
             kind = "float" if attr == "sharpness" else "int"
-            s = Slider(box.body, self.ui, label, lo, hi, 0.0, kind=kind, decimals=1 if kind == "float" else 0,
+            s = Slider(parent, self.ui, label, lo, hi, 0.0, kind=kind, decimals=1 if kind == "float" else 0,
                        on_begin=self.app.push_undo, on_change=lambda v, a=attr, n=neutral: self._set_attr(a, v + n))
-            s.pack(fill="x", pady=(0, self.ui.px(8)))
+            s.pack(fill="x", pady=(0, self.ui.px(14)))
             s.neutral = neutral
             self.sliders[attr] = s
 
@@ -153,10 +202,27 @@ class DevelopView(View):
         values = state.params_for(key)
         for c in FILTER_REGISTRY[key].controls:
             s = Slider(body, self.ui, c.label, c.minimum, c.maximum, c.default, value=values[c.label], kind=c.kind,
-                       on_begin=self.app.push_undo, on_change=lambda v, lbl=c.label: self._set_profile_param(lbl, v))
-            s.pack(fill="x", pady=(0, self.ui.px(8)))
+                       box=self.look_box, on_begin=self.app.push_undo,
+                       on_change=lambda v, lbl=c.label: self._set_profile_param(lbl, v))
+            s.pack(fill="x", pady=(0, self.ui.px(10)))
             self.profile_sliders[c.label] = s
+        self.look_box.track(body)
         self._built_profile = key
+
+    def _save_menu(self):
+        m = tk.Menu(self.app.root, tearoff=0, bg=T.BG, fg=T.HOVER, activebackground=T.LINE, activeforeground=T.WHITE,
+                    bd=1, relief="solid", font=self.ui.fonts.label)
+        m.add_command(label="QUICK SAVE  (JPEG, BESIDE ORIGINAL)", command=self.quick_save)
+        m.add_separator()
+        m.add_command(label="SAVE AS JPEG ...", command=lambda: self.export(".jpg"))
+        m.add_command(label="SAVE AS PNG ...", command=lambda: self.export(".png"))
+        m.add_command(label="SAVE AS TIFF ...", command=lambda: self.export(".tif"))
+        x = self.save_btn.winfo_rootx()
+        y = self.save_btn.winfo_rooty() + self.save_btn.winfo_height()
+        try:
+            m.tk_popup(x, y)
+        finally:
+            m.grab_release()
 
     # ============================================================ state glue
     @property
@@ -273,6 +339,7 @@ class DevelopView(View):
         c.create_image(int(cw / 2 - (cx - x0) * s), int(ch / 2 - (cy - y0) * s), image=self._photo, anchor="nw")
         zoomed = w * s > cw + 1 or h * s > ch + 1
         c.config(cursor="fleur" if zoomed else "")
+        self._draw_zoom()
 
     def _zoom_to(self, zoom, anchor=None):
         img = self._display_image()
@@ -327,7 +394,7 @@ class DevelopView(View):
             self._compare_release_after = None
         if on != self.compare:
             self.compare = on
-            self.compare_btn.set_active(on)
+            self._draw_compare_btn()
             self._redraw()
 
     def _compare_key_released(self):
@@ -354,19 +421,41 @@ class DevelopView(View):
         GeometryDialog(self.app, session.proxy, session.image.shape[1], session.image.shape[0], self.state.geometry, apply)
 
     # =============================================================== export
-    def export(self):
+    FORMATS = {".jpg": ("JPEG Image", "*.jpg *.jpeg"), ".png": ("PNG Image", "*.png"), ".tif": ("TIFF Image", "*.tif *.tiff")}
+
+    def _default_name(self, ext: str) -> str:
+        stem = os.path.splitext(os.path.basename(self.app.session.path))[0]
+        return f"EXPORT_{stem}_{self.state.profile.split(' ')[0]}{ext}"
+
+    def export(self, ext: str = ".jpg"):
+        """SAVE AS ...: pick a location for the chosen format."""
         session = self.app.session
         if not session.loaded or self._exporting:
             return
-        stem = os.path.splitext(os.path.basename(session.path))[0]
-        initial = f"EXPORT_{stem}_{self.state.profile.split(' ')[0]}.jpg"
+        first = self.FORMATS[ext]
         path = filedialog.asksaveasfilename(
-            parent=self.app.root, initialdir=os.path.dirname(session.path), initialfile=initial, defaultextension=".jpg",
-            filetypes=[("JPEG Image", "*.jpg *.jpeg"), ("PNG Image", "*.png"), ("TIFF Image", "*.tif *.tiff")])
+            parent=self.app.root, initialdir=os.path.dirname(session.path), initialfile=self._default_name(ext),
+            defaultextension=ext, filetypes=[first] + [v for k, v in self.FORMATS.items() if k != ext])
         if not path:
             return
         if os.path.splitext(path)[1].lower() not in imgio.EXPORT_FORMATS:
-            path += ".jpg"
+            path += ext
+        self._run_export(path, ask_reveal=True)
+
+    def quick_save(self):
+        """QUICK SAVE: full-resolution JPEG beside the original, no dialog."""
+        session = self.app.session
+        if not session.loaded or self._exporting:
+            return
+        folder = os.path.dirname(session.path)
+        base = self._default_name(".jpg")[:-4]
+        path, n = os.path.join(folder, base + ".jpg"), 2
+        while os.path.exists(path):
+            path, n = os.path.join(folder, f"{base}_{n}.jpg"), n + 1
+        self._run_export(path, ask_reveal=False)
+
+    def _run_export(self, path: str, ask_reveal: bool):
+        session = self.app.session
         state, image, exif = self.state.copy(), session.image, session.exif
         self._exporting = True
         self.save_btn.set_enabled(False)
@@ -380,12 +469,12 @@ class DevelopView(View):
         def done(shape):
             self._exporting = False
             self.save_btn.set_enabled(True)
-            self.notice(f"EXPORT COMPLETE // {shape[1]} x {shape[0]}")
+            self.notice(f"SAVED {os.path.basename(path).upper()} // {shape[1]} x {shape[0]}", ms=8000)
             if os.path.dirname(os.path.abspath(path)) == os.path.abspath(self.app.folder):
                 self.app.views["library"].load_folder()
-            if messagebox.askyesno("WORKSTATION REPORT",
-                                   f"Export Complete!\nSaved graded image as:\n{path}\n\nOpen the containing folder?",
-                                   parent=self.app.root):
+            if ask_reveal and messagebox.askyesno(
+                    "WORKSTATION REPORT", f"Export Complete!\nSaved graded image as:\n{path}\n\nOpen the containing folder?",
+                    parent=self.app.root):
                 self.app.reveal(path)
 
         def failed(exc):

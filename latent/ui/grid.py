@@ -7,7 +7,6 @@ fills the viewport, numbered in the top-left corner.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
 from typing import Callable, Dict, List, Optional, Tuple
 
 import cv2
@@ -23,13 +22,14 @@ class ThumbGrid(tk.Frame):
                  on_hover: Optional[Callable[[Optional[int]], None]] = None,
                  on_visible: Optional[Callable[[int, int], None]] = None,
                  cols: int = 5, rows: Optional[int] = None, gap: float = T.CELL_GAP, numbered: bool = False,
-                 bar: Optional[ttk.Scrollbar] = None):
+                 margin: float = T.CELL_INSET, bar=None):
         super().__init__(master, bg=T.BG)
         self.ui = ui
         self.on_select, self.on_activate, self.on_hover, self.on_visible = on_select, on_activate, on_hover, on_visible
         self.cols, self.rows_fixed, self.numbered = cols, rows, numbered
         self.gap = ui.px(gap)
-        self.label_h = ui.px(22)
+        self.margin = ui.px(margin)
+        self.label_h = ui.px(24)
 
         self.canvas = tk.Canvas(self, bg=T.BG, highlightthickness=0, bd=0)
         self.bar = bar  # lives in the app's shared scrollbar column
@@ -104,14 +104,14 @@ class ThumbGrid(tk.Frame):
         c.delete("all")
         W = max(c.winfo_width(), 200)
         H = max(c.winfo_height(), 200)
-        g = self.gap
-        self.cell_w = int((W - (self.cols - 1) * g) / self.cols)
+        g, m = self.gap, self.margin
+        self.cell_w = (W - 2 * m - (self.cols - 1) * g) / self.cols
         if self.rows_fixed:  # fill the viewport exactly
-            self.cell_h = int((H - (self.rows_fixed - 1) * g) / self.rows_fixed)
+            self.cell_h = (H - 2 * m - (self.rows_fixed - 1) * g) / self.rows_fixed
         else:
             self.cell_h = self.cell_w
         rows = -(-self.count // self.cols) if self.count else 0
-        total = rows * self.cell_h + max(0, rows - 1) * g
+        total = 2 * m + rows * self.cell_h + max(0, rows - 1) * g
         c.configure(scrollregion=(0, 0, W, max(H, total)))
         self._laid_out = True
         for i in range(self.count):
@@ -120,9 +120,9 @@ class ThumbGrid(tk.Frame):
 
     def cell_rect(self, i: int) -> Tuple[int, int, int, int]:
         r, col = divmod(i, self.cols)
-        x = col * (self.cell_w + self.gap)
-        y = r * (self.cell_h + self.gap)
-        return x, y, x + self.cell_w, y + self.cell_h
+        x = self.margin + col * (self.cell_w + self.gap)
+        y = self.margin + r * (self.cell_h + self.gap)
+        return int(x), int(y), int(x + self.cell_w), int(y + self.cell_h)
 
     def _image_box(self) -> Tuple[int, int]:
         inset = self.ui.px(12)
@@ -132,18 +132,19 @@ class ThumbGrid(tk.Frame):
         c = self.canvas
         x0, y0, x1, y1 = self.cell_rect(i)
         tag = f"cell{i}"
-        f = self.ui.fonts.cell
         pad = self.ui.px(5)
+        # file / profile name: 12px, inside the bottom-left corner
         c.create_text(x0 + pad, y1 - pad, text=self._elide(self.titles[i].upper()), anchor="sw", fill=T.TEXT,
-                      font=f, tags=(tag, f"title{i}"))
-        if self.numbered:
-            c.create_text(x0 + pad, y0 + pad, text=f"{i + 1:02d}", anchor="nw", fill=T.TEXT, font=f, tags=(tag,))
+                      font=self.ui.fonts.cell, tags=(tag, f"title{i}"))
+        if self.numbered:  # 22.68px index, top-left
+            c.create_text(x0 + self.ui.px(10), y0 + self.ui.px(8), text=f"{i + 1:02d}", anchor="nw", fill=T.TEXT,
+                          font=self.ui.fonts.number, tags=(tag, f"num{i}"))
         c.create_rectangle(x0, y0, x1 - 1, y1 - 1, outline=T.LINE, width=1, tags=(tag, f"border{i}"))
         self._draw_cell_image(i)
         self._style_border(i)
 
     def _elide(self, text: str) -> str:
-        max_chars = max(8, int((self.cell_w - self.ui.px(12)) / max(1, self.ui.px(5.2))))
+        max_chars = max(8, int((self.cell_w - self.ui.px(12)) / max(1, self.ui.px(6.6))))
         return text if len(text) <= max_chars else text[: max_chars - 3] + "..."
 
     def _draw_cell_image(self, i: int):
@@ -172,14 +173,15 @@ class ThumbGrid(tk.Frame):
         if i >= self.count:
             return
         if i == self.selected:
-            self.canvas.itemconfigure(f"border{i}", outline=T.SELECT, width=max(1, self.ui.px(1.5)))
-            self.canvas.itemconfigure(f"title{i}", fill=T.G35)
+            color, width = T.SELECT, max(1, self.ui.px(1.42))
         elif i == self.hovered:
-            self.canvas.itemconfigure(f"border{i}", outline=T.G35, width=1)
-            self.canvas.itemconfigure(f"title{i}", fill=T.G35)
+            color, width = T.HOVER, 1
         else:
-            self.canvas.itemconfigure(f"border{i}", outline=T.LINE, width=1)
-            self.canvas.itemconfigure(f"title{i}", fill=T.TEXT)
+            color, width = T.LINE, 1
+        self.canvas.itemconfigure(f"border{i}", outline=color, width=width)
+        text = T.HOVER if i in (self.selected, self.hovered) else T.TEXT
+        self.canvas.itemconfigure(f"title{i}", fill=text)
+        self.canvas.itemconfigure(f"num{i}", fill=text)
         self.canvas.tag_raise(f"border{i}")
 
     # ------------------------------------------------------------ interact
@@ -187,8 +189,8 @@ class ThumbGrid(tk.Frame):
         if not self.count or not self._laid_out:
             return None
         cx, cy = self.canvas.canvasx(x), self.canvas.canvasy(y)
-        col = int(cx // (self.cell_w + self.gap))
-        row = int(cy // (self.cell_h + self.gap))
+        col = int((cx - self.margin) // (self.cell_w + self.gap))
+        row = int((cy - self.margin) // (self.cell_h + self.gap))
         if not (0 <= col < self.cols) or row < 0:
             return None
         i = row * self.cols + col
@@ -258,7 +260,7 @@ class ThumbGrid(tk.Frame):
             return 0, 0
         top = self.canvas.canvasy(0)
         row_h = self.cell_h + self.gap
-        r0 = max(0, int(top // row_h))
+        r0 = max(0, int((top - self.margin) // row_h))
         r1 = int((top + self.canvas.winfo_height()) // row_h) + 1
         return r0 * self.cols, min(self.count, (r1 + 1) * self.cols)
 

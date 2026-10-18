@@ -27,10 +27,10 @@ class LooksView(View):
         self._hover = None
         self._preview_cache = {}
 
-        # viewport: 5 x 3 board of numbered cells filling the frame
+        # viewport: 5 x 3 board of adjacent, numbered cells on the frame lines
         self.grid = ThumbGrid(self.viewport, ui, app.router, on_select=lambda i: self._refresh(),
                               on_activate=self._on_activate, on_hover=self._on_hover,
-                              cols=5, rows=3, numbered=True, bar=self.bar)
+                              cols=5, rows=3, numbered=True, gap=0, margin=0, bar=self.bar)
         self.grid.pack(fill="both", expand=True)
         self.grid.set_items([p.key for p in PROFILES])
         self.grid.set_selected(0, ensure_visible=False)
@@ -38,8 +38,11 @@ class LooksView(View):
         self.top = ReadoutBox(self.panel, ui)
         self.top.pack(fill="x")
         self.readout, self.notice_lbl = self.top.text, self.top.notice
-        Button(self.top.actions, ui, "WORKBENCH", command=self._develop).pack(side="right")
-        Button(self.top.actions, ui, "BACK", command=lambda: app.go("library")).pack(side="right", padx=(0, ui.px(10)))
+        bar = tk.Frame(self.panel, bg=T.BG)
+        bar.pack(fill="x", pady=(gap(ui), 0))
+        Button(bar, ui, "BACK", icon="back", command=lambda: app.go("library")).pack(side="left", fill="x", expand=True)
+        Button(bar, ui, "WORKBENCH", icon="forward", command=self._develop).pack(side="left", fill="x", expand=True,
+                                                                                padx=(gap(ui), 0))
         self.previewbox = PreviewBox(self.panel, ui)
         self.previewbox.pack(fill="both", expand=True, pady=(gap(ui), 0))
         self.preview, self.preview_name = self.previewbox.image, self.previewbox.name
@@ -119,7 +122,7 @@ class LooksView(View):
         prof = FILTER_REGISTRY[key]
         path = self.app.session.path or ""
         stem = os.path.splitext(os.path.basename(path))[0].upper()
-        self.readout.config(text=f"FILE:{stem}\nFILTER:{key}\n\nSPEC:{prof.description}")
+        self.readout.config(text=f"FILTER:\n{key}\n\n{prof.description.upper()}")
         self.preview_name.config(text=f"{stem} // {key}")
         self._update_preview()
 

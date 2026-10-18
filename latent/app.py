@@ -157,7 +157,7 @@ class LatentApp:
         frame = tk.Frame(self.root, bg=T.BG, highlightthickness=1, highlightbackground=T.LINE, highlightcolor=T.LINE)
         frame.grid(row=0, column=0, sticky="nsew", padx=(g, g), pady=g)
         self.viewport_host = tk.Frame(frame, bg=T.BG)
-        self.viewport_host.pack(fill="both", expand=True, padx=ui.px(T.CELL_INSET), pady=ui.px(T.CELL_INSET))
+        self.viewport_host.pack(fill="both", expand=True)
 
         self.scroll_strip = tk.Frame(self.root, bg=T.SCROLL_TROUGH, width=g)
         self.scroll_strip.grid(row=0, column=1, sticky="ns")

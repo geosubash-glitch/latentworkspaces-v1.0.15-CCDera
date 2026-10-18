@@ -61,31 +61,31 @@ class GeometryDialog:
         body = side
         tk.Label(body, text="GEOMETRY CONTROLS", bg=T.BG_PANEL, fg=T.TEXT_HI, font=ui.fonts.title, anchor="w").pack(fill="x", pady=(0, ui.px(10)))
 
-        box = Box(body, ui, "Crop Aspect Ratio", title_color=T.SELECT)
+        box = Box(body, ui, "Crop Aspect Ratio", caption_font=ui.fonts.label)
         box.pack(fill="x", pady=ui.px(5))
         grid = tk.Frame(box.body, bg=T.BG_PANEL)
         grid.pack(fill="x")
         self.ratio_buttons = {}
         for i, (key, label, _) in enumerate(RATIOS):
-            b = Button(grid, ui, label, command=lambda k=key: self.set_ratio(k), font=ui.fonts.label, padx=ui.px(4), pady=ui.px(3))
+            b = Button(grid, ui, label, command=lambda k=key: self.set_ratio(k), font=ui.fonts.label, height=26)
             b.grid(row=i // 3, column=i % 3, sticky="ew", padx=(0, ui.px(4)), pady=(0, ui.px(4)))
             self.ratio_buttons[key] = b
         for col in range(3):
             grid.grid_columnconfigure(col, weight=1)
-        self.orient_btn = Button(box.body, ui, "SWAP ORIENTATION", command=self.swap_orientation, font=ui.fonts.label, pady=ui.px(3))
+        self.orient_btn = Button(box.body, ui, "SWAP ORIENTATION", command=self.swap_orientation, font=ui.fonts.label, height=26)
         self.orient_btn.pack(fill="x")
 
-        box = Box(body, ui, "Rotation")
+        box = Box(body, ui, "Rotation", caption_font=ui.fonts.label)
         box.pack(fill="x", pady=ui.px(5))
         row = tk.Frame(box.body, bg=T.BG_PANEL)
         row.pack(fill="x", pady=(0, ui.px(8)))
-        Button(row, ui, "-90", command=lambda: self.turn(-1), font=ui.fonts.label, pady=ui.px(3)).pack(side="left", fill="x", expand=True)
-        Button(row, ui, "+90", command=lambda: self.turn(1), font=ui.fonts.label, pady=ui.px(3)).pack(side="left", fill="x", expand=True, padx=(ui.px(4), 0))
+        Button(row, ui, "-90", command=lambda: self.turn(-1), font=ui.fonts.label, height=26).pack(side="left", fill="x", expand=True)
+        Button(row, ui, "+90", command=lambda: self.turn(1), font=ui.fonts.label, height=26).pack(side="left", fill="x", expand=True, padx=(ui.px(4), 0))
         self.straighten = Slider(box.body, ui, "Angle (deg)", -45, 45, 0, value=self.geo.rotate, decimals=1,
                                  on_change=lambda v: self._set("rotate", v))
         self.straighten.pack(fill="x")
 
-        box = Box(body, ui, "Perspective Warp")
+        box = Box(body, ui, "Perspective Warp", caption_font=ui.fonts.label)
         box.pack(fill="x", pady=ui.px(5))
         self.vk = Slider(box.body, ui, "Vertical Keystone", -100, 100, 0, value=self.geo.v_keystone, kind="int",
                          on_change=lambda v: self._set("v_keystone", v))
@@ -94,7 +94,7 @@ class GeometryDialog:
                          on_change=lambda v: self._set("h_keystone", v))
         self.hk.pack(fill="x")
 
-        box = Box(body, ui, "Resize (Output)")
+        box = Box(body, ui, "Resize (Output)", caption_font=ui.fonts.label)
         box.pack(fill="x", pady=ui.px(5))
         self.size_hint = tk.Label(box.body, text="", bg=T.BG_PANEL, fg=T.TEXT, font=ui.fonts.value, anchor="w", justify="left")
         self.size_hint.pack(fill="x", pady=(0, ui.px(4)))
@@ -111,10 +111,9 @@ class GeometryDialog:
 
         foot = tk.Frame(body, bg=T.BG_PANEL)
         foot.pack(fill="x", pady=(ui.px(15), 0))
-        Button(foot, ui, "[ APPLY TRANSFORMS ]", command=self.apply, accent=T.SELECT, outline=T.SELECT,
-               font=ui.fonts.label, pady=ui.px(8)).pack(fill="x", pady=ui.px(2))
-        Button(foot, ui, "[ RESET TO DEFAULT ]", command=self.reset, font=ui.fonts.label, pady=ui.px(6)).pack(fill="x", pady=ui.px(2))
-        Button(foot, ui, "[ CANCEL ]", command=self.win.destroy, font=ui.fonts.label, pady=ui.px(4)).pack(fill="x", pady=ui.px(2))
+        Button(foot, ui, "[ APPLY TRANSFORMS ]", command=self.apply, accent=T.SELECT, font=ui.fonts.label, height=34).pack(fill="x", pady=ui.px(2))
+        Button(foot, ui, "[ RESET TO DEFAULT ]", command=self.reset, font=ui.fonts.label, height=30).pack(fill="x", pady=ui.px(2))
+        Button(foot, ui, "[ CANCEL ]", command=self.win.destroy, font=ui.fonts.label, height=30).pack(fill="x", pady=ui.px(2))
 
         win.bind("<Return>", lambda e: self.apply() if not isinstance(win.focus_get(), tk.Entry) else self._entry_enter())
         win.bind("<Escape>", lambda e: win.destroy())
