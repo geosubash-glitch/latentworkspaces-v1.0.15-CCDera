@@ -16,15 +16,13 @@ from . import __version__, theme as T
 from .imaging import io as imgio
 from .imaging.pipeline import EditState, make_proxy
 from .settings import Settings, config_dir, default_photo_folder
-from .ui.widgets import UI, Button, WheelRouter, Tooltip
+from .ui.widgets import UI, Button, WheelRouter
 from .workers import Channel, Dispatcher
 
 log = logging.getLogger(__name__)
 
 MOD = "Command" if sys.platform == "darwin" else "Control"
 MOD_LABEL = "⌘" if sys.platform == "darwin" else "Ctrl+"
-
-STAGES = (("library", "01", "LIBRARY"), ("looks", "02", "LOOK"), ("develop", "03", "DEVELOP"))
 
 SHORTCUTS = [
     ("Library", [("Choose folder", f"{MOD_LABEL}O"), ("Move selection", "Arrow keys"), ("Open photo", "Enter / double-click"),
@@ -99,6 +97,7 @@ class Session:
 class LatentApp:
     def __init__(self, root: tk.Tk):
         self.root = root
+        T.style_ttk(root)
         self.ui = UI(root)
         self.settings = Settings()
         self.dispatcher = Dispatcher(root)
@@ -107,9 +106,8 @@ class LatentApp:
         self.folder = self._initial_folder()
         self.stage = "library"
         self._fullscreen = False
-        self._toast_after = None
 
-        root.title("Latent Studio")
+        root.title("LATENT // THREE-STAGE LAB PIPELINE")
         root.configure(bg=T.BG_VIEW)
         root.minsize(self.ui.px(1024), self.ui.px(640))
         root.report_callback_exception = self._report_exception
@@ -125,7 +123,7 @@ class LatentApp:
             "develop": DevelopView(self),
         }
         self._bind_keys()
-        self.go("library")
+        self.views["library"].show()
         root.protocol("WM_DELETE_WINDOW", self.quit)
 
     # ------------------------------------------------------------------ shell
@@ -147,120 +145,41 @@ class LatentApp:
             log.debug("icon not set", exc_info=True)
 
     def _build_shell(self):
+        """Original 1920x1080 grid: 20px margin, viewport, 620px control column,
+        and a 20px strip at the far right for the control column's scrollbar."""
         ui = self.ui
+        m = ui.px(20)
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
 
         self.viewport_host = tk.Frame(self.root, bg=T.BG_VIEW)
-        self.viewport_host.grid(row=0, column=0, sticky="nsew")
-        tk.Frame(self.root, bg=T.LINE, width=1).grid(row=0, column=1, sticky="ns")
+        self.viewport_host.grid(row=0, column=0, sticky="nsew", padx=m, pady=m)
 
         sw = self.root.winfo_screenwidth()
-        panel_w = max(ui.px(360), min(ui.px(460), int(sw * 0.25)))
-        self.panel = tk.Frame(self.root, bg=T.BG_PANEL, width=panel_w)
-        self.panel.grid(row=0, column=2, sticky="ns")
-        self.panel.grid_propagate(False)
-        self.panel.pack_propagate(False)
-        self.panel_width = panel_w
+        self.panel_width = max(ui.px(400), min(ui.px(620), int(sw * 620 / T.DESIGN_W)))
+        self.panel_host = tk.Frame(self.root, bg=T.BG_PANEL, width=self.panel_width)
+        self.panel_host.grid(row=0, column=1, sticky="ns", pady=m)
+        self.panel_host.grid_propagate(False)
+        self.panel_host.pack_propagate(False)
 
-        # Brand + stepper
-        header = tk.Frame(self.panel, bg=T.BG_PANEL)
-        header.pack(fill="x", padx=ui.px(20), pady=(ui.px(16), 0))
-        brand = tk.Frame(header, bg=T.BG_PANEL)
-        brand.pack(fill="x")
-        try:
-            from PIL import Image, ImageTk
-            logo = Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "app_logo.png"))
-            logo = logo.resize((ui.px(26), ui.px(26)), Image.Resampling.LANCZOS)
-            self._brand_logo = ImageTk.PhotoImage(logo)
-            tk.Label(brand, image=self._brand_logo, bg=T.BG_PANEL).pack(side="left", padx=(0, ui.px(10)))
-        except Exception:
-            pass
-        tk.Label(brand, text="LATENT", bg=T.BG_PANEL, fg=T.TEXT_HI, font=ui.fonts.brand).pack(side="left")
-        tk.Label(brand, text=f"STUDIO  v{__version__}", bg=T.BG_PANEL, fg=T.TEXT_FAINT, font=ui.fonts.micro).pack(side="left", padx=(ui.px(8), 0), pady=(ui.px(3), 0))
-        help_btn = tk.Label(brand, text="?", bg=T.BG_PANEL, fg=T.TEXT_DIM, font=ui.fonts.mono_bold, cursor="hand2",
-                            padx=ui.px(6), highlightthickness=1, highlightbackground=T.LINE_STRONG)
-        help_btn.pack(side="right")
-        help_btn.bind("<Button-1>", lambda e: self.show_shortcuts())
-        Tooltip(help_btn, ui, "Keyboard shortcuts (F1)")
-
-        stepper = tk.Frame(header, bg=T.BG_PANEL)
-        stepper.pack(fill="x", pady=(ui.px(16), 0))
-        self._steps = {}
-        for i, (key, num, label) in enumerate(STAGES):
-            cell = tk.Frame(stepper, bg=T.BG_PANEL, cursor="hand2")
-            cell.pack(side="left", expand=True, fill="x")
-            n = tk.Label(cell, text=num, bg=T.BG_PANEL, font=ui.fonts.micro, anchor="w")
-            n.pack(fill="x")
-            t = tk.Label(cell, text=label, bg=T.BG_PANEL, font=ui.fonts.mono_bold, anchor="w")
-            t.pack(fill="x")
-            bar = tk.Frame(cell, height=max(2, ui.px(2)), bg=T.LINE)
-            bar.pack(fill="x", pady=(ui.px(6), 0), padx=(0, ui.px(6) if i < 2 else 0))
-            for w in (cell, n, t, bar):
-                w.bind("<Button-1>", lambda e, k=key: self.go(k))
-            self._steps[key] = (n, t, bar, cell)
-
-        self.panel_host = tk.Frame(self.panel, bg=T.BG_PANEL)
-        self.panel_host.pack(fill="both", expand=True)
-
-        # Status bar
-        self.status = tk.Frame(self.root, bg=T.BG_PANEL, height=ui.px(26))
-        self.status.grid(row=1, column=0, columnspan=3, sticky="ew")
-        tk.Frame(self.status, bg=T.LINE, height=1).pack(fill="x", side="top")
-        self.status_left = tk.Label(self.status, text="", bg=T.BG_PANEL, fg=T.TEXT_DIM, font=ui.fonts.micro, anchor="w")
-        self.status_left.pack(side="left", padx=ui.px(12), pady=ui.px(4))
-        self.status_action = tk.Label(self.status, text="", bg=T.BG_PANEL, fg=T.ACCENT, font=ui.fonts.micro, cursor="hand2")
-        self.status_action.pack(side="left")
-        self.status_right = tk.Label(self.status, text="", bg=T.BG_PANEL, fg=T.TEXT_FAINT, font=ui.fonts.micro, anchor="e")
-        self.status_right.pack(side="right", padx=ui.px(12))
+        self.scroll_strip = tk.Frame(self.root, bg=T.BG_VIEW, width=m)
+        self.scroll_strip.grid(row=0, column=2, sticky="ns")
+        self.scroll_strip.pack_propagate(False)
 
     # ------------------------------------------------------------ navigation
     def can_enter(self, stage: str) -> bool:
         return stage == "library" or self.session.loaded
 
     def go(self, stage: str):
-        if not self.can_enter(stage):
-            self.toast("Open a photo from the library first.")
+        if not self.can_enter(stage) or stage == self.stage:
             return
-        if stage != self.stage or not getattr(self, "_shown_once", False):
-            self.views[self.stage].hide()
-            self.stage = stage
-            self.views[stage].show()
-            self._shown_once = True
-        for key, (n, t, bar, cell) in self._steps.items():
-            active = key == stage
-            enabled = self.can_enter(key)
-            color = T.TEXT_HI if active else (T.TEXT_DIM if enabled else T.TEXT_FAINT)
-            n.config(fg=T.ACCENT if active else T.TEXT_FAINT)
-            t.config(fg=color)
-            bar.config(bg=T.ACCENT if active else (T.LINE_STRONG if enabled else T.LINE))
-            for w in (cell, n, t, bar):
-                w.config(cursor="hand2" if enabled else "arrow")
+        self.views[self.stage].hide()
+        self.stage = stage
+        self.views[stage].show()
 
-    def set_status(self, left: str = None, right: str = None):
-        if left is not None:
-            self.status_left.config(text=left)
-        if right is not None:
-            self.status_right.config(text=right)
-
-    def toast(self, message: str, action: Optional[Tuple[str, callable]] = None, ms: int = 6000):
-        self.status_left.config(text=message, fg=T.TEXT_HI)
-        if action:
-            label, fn = action
-            self.status_action.config(text=f"  {label} ›")
-            self.status_action.bind("<Button-1>", lambda e: fn())
-        else:
-            self.status_action.config(text="")
-        if self._toast_after:
-            self.root.after_cancel(self._toast_after)
-
-        def clear():
-            self._toast_after = None
-            self.status_left.config(fg=T.TEXT_DIM)
-            self.status_action.config(text="")
-            self.views[self.stage].refresh_status()
-
-        self._toast_after = self.root.after(ms, clear)
+    def toast(self, message: str, action: Optional[Tuple[str, callable]] = None, ms: int = 5000):
+        """Short notice in the current view's readout."""
+        self.views[self.stage].notice(message, ms)
 
     # --------------------------------------------------------------- folder
     def choose_folder(self):
@@ -282,7 +201,7 @@ class LatentApp:
         loader = getattr(self, "_load_channel", None) or Channel(self.dispatcher, "load")
         self._load_channel = loader
         name = os.path.basename(path)
-        self.set_status(f"Opening {name}…")
+        self.toast(f"MOUNTING {name.upper()} ...", ms=60000)
         self.root.config(cursor="watch")
 
         def job(_token):
@@ -298,8 +217,8 @@ class LatentApp:
 
         def failed(exc):
             self.root.config(cursor="")
-            self.set_status("")
-            messagebox.showerror("Can't open photo", f"{name} could not be opened.\n\n{exc}", parent=self.root)
+            self.toast("")
+            messagebox.showerror("WORKSTATION REPORT", f"{name} could not be opened.\n\n{exc}", parent=self.root)
 
         loader.submit(job, done, failed)
 
@@ -310,12 +229,12 @@ class LatentApp:
     def undo(self, _e=None):
         if self.stage == "develop" and self.session.undo_step():
             self.views["develop"].sync_from_state()
-            self.toast("Undo")
+            self.toast("UNDO")
 
     def redo(self, _e=None):
         if self.stage == "develop" and self.session.redo_step():
             self.views["develop"].sync_from_state()
-            self.toast("Redo")
+            self.toast("REDO")
 
     # ----------------------------------------------------------------- keys
     def _typing(self) -> bool:
@@ -370,22 +289,23 @@ class LatentApp:
     def show_shortcuts(self):
         ui = self.ui
         win = tk.Toplevel(self.root)
-        win.title("Keyboard shortcuts")
+        win.title("KEY BINDINGS")
         win.configure(bg=T.BG_PANEL)
         win.transient(self.root)
         win.resizable(False, False)
         body = tk.Frame(win, bg=T.BG_PANEL)
-        body.pack(padx=ui.px(28), pady=ui.px(24))
-        tk.Label(body, text="KEYBOARD SHORTCUTS", bg=T.BG_PANEL, fg=T.TEXT_HI, font=ui.fonts.title).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, ui.px(12)))
-        row = 1
+        body.pack(padx=ui.px(24), pady=ui.px(20))
+        row = 0
         for group, items in SHORTCUTS:
-            tk.Label(body, text=group.upper(), bg=T.BG_PANEL, fg=T.ACCENT, font=ui.fonts.label).grid(row=row, column=0, sticky="w", pady=(ui.px(10), ui.px(4)))
+            tk.Label(body, text=f"[ {group.upper()} ]", bg=T.BG_PANEL, fg=T.TEXT, font=ui.fonts.label).grid(
+                row=row, column=0, columnspan=2, sticky="w", pady=(ui.px(10) if row else 0, ui.px(4)))
             row += 1
             for action, keys in items:
-                tk.Label(body, text=action, bg=T.BG_PANEL, fg=T.TEXT, font=ui.fonts.body).grid(row=row, column=0, sticky="w", padx=(0, ui.px(40)))
-                tk.Label(body, text=keys, bg=T.BG_PANEL, fg=T.TEXT_DIM, font=ui.fonts.mono).grid(row=row, column=1, sticky="w")
+                tk.Label(body, text=action.upper(), bg=T.BG_PANEL, fg=T.TEXT_LABEL, font=ui.fonts.label).grid(
+                    row=row, column=0, sticky="w", padx=(ui.px(8), ui.px(32)))
+                tk.Label(body, text=keys.upper(), bg=T.BG_PANEL, fg=T.TEXT, font=ui.fonts.value).grid(row=row, column=1, sticky="w")
                 row += 1
-        Button(body, ui, "CLOSE", command=win.destroy).grid(row=row, column=1, sticky="e", pady=(ui.px(18), 0))
+        Button(body, ui, "CLOSE", command=win.destroy, font=ui.fonts.button_small).grid(row=row, column=1, sticky="e", pady=(ui.px(16), 0))
         win.bind("<Escape>", lambda e: win.destroy())
         self._center(win)
         win.focus_set()
@@ -399,7 +319,7 @@ class LatentApp:
     # --------------------------------------------------------------- errors
     def _report_exception(self, exc, val, tb):
         log.error("Unhandled UI error", exc_info=(exc, val, tb))
-        messagebox.showerror("Something went wrong",
+        messagebox.showerror("WORKSTATION REPORT",
                              f"{val}\n\nDetails were written to:\n{os.path.join(config_dir(), 'latent.log')}",
                              parent=self.root)
 
@@ -456,7 +376,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         app = LatentApp(root)
     except Exception:
         log.exception("startup failed")
-        messagebox.showerror("Latent Studio could not start", traceback.format_exc())
+        messagebox.showerror("WORKSTATION REPORT", "Latent Studio could not start.\n\n" + traceback.format_exc())
         return 1
     if argv:
         target = os.path.abspath(argv[0])

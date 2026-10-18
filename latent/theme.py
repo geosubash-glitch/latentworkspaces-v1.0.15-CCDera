@@ -1,84 +1,83 @@
-"""Design tokens: colour, type and spacing.
+"""Design tokens taken from the original LATENT Illustrator layouts.
 
-Palette is taken from the original Illustrator layouts (#020202 viewport,
-#080808 panels, #58595b rules, #939598 / #e6e7e8 greys).  The two slightly
-different accent yellows used in v1 (#fff200 and #ffcc00) are unified into
-one accent.
+Everything here was measured from the v1 interface: the 1920x1080 grid
+(20px outer margin, 1240px viewport, 620px control column with 580px content),
+the near-black surfaces, light 1px outlined buttons, bracketed section titles,
+light-grey scrollbars and Courier New throughout.
 """
 from __future__ import annotations
 
-import sys
 import tkinter as tk
 import tkinter.font as tkfont
 
 # Surfaces
-BG_VIEW = "#020202"
-BG_PANEL = "#080808"
-BG_RAISED = "#101010"
-BG_INPUT = "#151515"
-BG_HOVER = "#1c1c1c"
+BG_VIEW = "#020202"      # viewport / root
+BG_PANEL = "#080808"     # control column
+BG_WELL = "#050505"      # inset canvases (wheels, curve)
+BG_BUTTON = "#121212"
+BG_BUTTON_ACTIVE = "#333333"
 
 # Lines
-LINE = "#1f1f1f"
-LINE_STRONG = "#3a3b3c"
-LINE_FOCUS = "#58595b"
+BOX = "#1c1c1c"          # info boxes, section frames
+SCOPE_LINE = "#222222"
+CELL = "#58595a"         # thumbnail cell borders
+BUTTON_LINE = "#d9d9d9"  # 1px outline of buttons
 
 # Text
-TEXT_FAINT = "#56575a"
-TEXT_DIM = "#8a8b8e"
-TEXT = "#c4c5c8"
-TEXT_HI = "#f0f0f0"
+TEXT_LABEL = "#555555"   # slider / section captions
+TEXT_CELL = "#6e6e6e"    # thumbnail captions
+TEXT = "#888888"         # readouts, button text
+TEXT_READ = "#aaaaaa"    # active readout
+TEXT_HI = "#ffffff"
 
-# Accent & status
-ACCENT = "#ffcc00"
-ACCENT_HOVER = "#ffd940"
-ACCENT_DIM = "#6b5600"
-ON_ACCENT = "#080808"
-DANGER = "#ff5a4f"
-OK = "#5fd38d"
+# Accents (two yellows, as in the original)
+SELECT = "#ffcc00"       # selection frames, apply
+SAVE = "#fff200"         # the SAVE command
 
-ACCENT_BGR = (0, 204, 255)
+# Illustrator scrollbar
+SCROLL_TROUGH = "#a7a9ac"
+SCROLL_THUMB = "#e6e7e8"
+SCROLL_EDGE = "#939598"
+SCROLL_ARROW = "#58595b"
+
+SELECT_BGR = (0, 204, 255)
+
+DESIGN_W, DESIGN_H = 1920.0, 1080.0
 
 
 class Fonts:
-    """Resolved font tuples; created once a Tk root exists."""
+    """Courier New everywhere, sized like the v1 layout."""
 
-    mono_family = "Courier New"
-    sans_family = "Helvetica"
-
-    def __init__(self, root: tk.Misc):
+    def __init__(self, root: tk.Misc, scale: float = 1.0):
         families = {f.lower(): f for f in tkfont.families(root)}
+        family = "Courier New"
+        for name in ("Courier New", "Courier", "FreeMono", "Courier 10 Pitch", "Liberation Mono"):
+            if name.lower() in families:
+                family = families[name.lower()]
+                break
+        self.family = family
 
-        def pick(*names):
-            for n in names:
-                if n.lower() in families:
-                    return families[n.lower()]
-            return names[-1]
+        def f(size, *style):
+            return (family, max(7, int(round(size * scale))), *style)
 
-        self.mono_family = pick("Cascadia Mono", "Consolas", "SF Mono", "Menlo", "JetBrains Mono",
-                                "DejaVu Sans Mono", "Liberation Mono", "Courier New", "Courier")
-        self.sans_family = pick("Segoe UI", "SF Pro Text", "Helvetica Neue", "Inter", "Cantarell",
-                                "DejaVu Sans", "Liberation Sans", "Arial", "Helvetica")
-        base = 9 if sys.platform.startswith("win") else (12 if sys.platform == "darwin" else 9)
-        self.base = base
-
-        m, s = self.mono_family, self.sans_family
-        self.micro = (m, base - 1)
-        self.label = (m, base - 1, "bold")
-        self.value = (m, base)
-        self.mono = (m, base)
-        self.mono_bold = (m, base, "bold")
-        self.body = (s, base)
-        self.body_small = (s, base - 1)
-        self.title = (m, base + 3, "bold")
-        self.display = (m, base + 7, "bold")
-        self.brand = (m, base + 2, "bold")
+        self.cell = f(7)
+        self.label = f(8, "bold")
+        self.value = f(8)
+        self.readout = f(10)
+        self.button = f(11, "bold")
+        self.button_small = f(9, "bold")
+        self.title = f(12, "bold")
+        self.body = f(9)
 
 
-def ui_scale(root: tk.Misc) -> float:
-    """Pixel scale relative to a 96-dpi display."""
+def style_ttk(root: tk.Misc) -> None:
+    """Scrollbars and the combobox, styled like the Illustrator SVGs."""
+    from tkinter import ttk
+    s = ttk.Style(root)
     try:
-        dpi = root.winfo_fpixels("1i")
+        s.theme_use("clam")
     except tk.TclError:
-        dpi = 96.0
-    return max(1.0, min(3.0, dpi / 96.0))
+        pass
+    s.configure("TScrollbar", troughcolor=SCROLL_TROUGH, background=SCROLL_THUMB, bordercolor=SCROLL_EDGE,
+                arrowcolor=SCROLL_ARROW, lightcolor=SCROLL_THUMB, darkcolor=SCROLL_THUMB, gripcount=0)
+    s.map("TScrollbar", background=[("active", "#ffffff"), ("pressed", "#c0c0c0")])

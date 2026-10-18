@@ -95,6 +95,7 @@ def test_full_workflow(app, tmp_path):
     out = tmp_path / "out.jpg"
     import latent.ui.develop as develop_mod
     develop_mod.filedialog.asksaveasfilename = lambda **kw: str(out)
+    develop_mod.messagebox.askyesno = lambda *a, **kw: False
     dev.export()
     assert wait_for(root, lambda: out.exists(), timeout=30)
     pump(root, 0.3)
@@ -103,5 +104,7 @@ def test_full_workflow(app, tmp_path):
         assert im.size == (240, 450)  # rotated, then 80% of the width
 
     app.go("library")
-    assert lib.grid.subtitles[1].endswith("EDITED")
+    lib.grid.set_selected(1)
+    lib._update_selection_panel()
+    assert "GRADED" in lib.readout.cget("text")
     assert not app._errors, app._errors

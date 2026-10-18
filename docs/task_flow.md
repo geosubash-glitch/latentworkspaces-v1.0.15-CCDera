@@ -1,36 +1,29 @@
 # LATENT // User Workflow & Task Flow
 
-LATENT is a linear, three-stage workflow shown as a stepper at the top of the side panel: **01 Library → 02 Look → 03 Develop**. You can always step back; later stages unlock once a photo is open.
+LATENT is a linear, three-stage workflow: **Explorer → Emulsion Grid → Workbench**. BACK (or Esc) steps back one stage.
 
-## 01 Library — choose a photo
+## Stage 1: Explorer (mounting deck)
 1. The app opens on the last folder you used (first run: your Pictures folder).
-2. **Choose folder…** (`Ctrl+O`) mounts a folder. Photos appear in a responsive grid, sorted naturally (`IMG_2` before `IMG_10`), with size and dimensions.
-3. Click (or use arrow keys) to select; the side panel shows a large preview, dimensions, file size and date.
-4. **Open photo** / double-click / `Enter` loads it at full resolution in the background and moves to Look.
+2. **NAVIGATE** (`Ctrl+O`) mounts a folder. Files appear in a five-column grid, sorted naturally (`IMG_2` before `IMG_10`).
+3. Single-click a file to see its readout (MOUNT TARGET, FILE ID, ALLOCATION, DIMENSIONS) and a clean preview.
+4. Double-click (or `Enter`) mounts it as the active image and moves to the Emulsion Grid.
 
-*Implementation:* thumbnails load lazily for the visible rows first, on a worker thread, with a bounded cache. The folder is re-scanned every 2 s while the Library is visible, so new files show up automatically.
+*Implementation:* thumbnails load lazily, visible rows first, on a worker thread with a bounded cache. The folder is re-scanned every 2 s while the Explorer is visible, so new files show up automatically.
 
-## 02 Look — compare film stocks
-1. All 15 profiles render on your photo. Cells take the photo's shape.
-2. Hover any cell: the side panel shows it large, with its description and grain type.
-3. Click to select, double-click / `Enter` / **Develop with this look** to continue. `Esc` goes back.
+## Stage 2: Emulsion Grid (profile evaluation)
+1. The active image is rendered through all 15 profiles on a 5×3 board.
+2. Hovering a cell updates the readout (ACTIVE LOG, FILTER, SPEC) and the large preview.
+3. Click to select; double-click, `Enter` or **WORKBENCH** opens the Workbench.
 
-*Implementation:* the grid renders outward from the selected look so the area you are looking at fills in first; the large preview is cached per look and panel size.
+*Implementation:* the board renders outward from the selected cell; the preview is cached per profile and panel size.
 
-## 03 Develop — grade and export
-Side panel, top to bottom:
-* **← Look**, **Undo / Redo**, **Export**
-* Histogram / waveform scope and **Reset all**
-* **Look** — the profile's own controls
-* **Light** — exposure, contrast, highlights, shadows
-* **Color** — temperature, tint, saturation
-* **Tone curve** — click to add a point, drag to shape, double-click a point to remove
-* **Color grading** — shadows / midtones / highlights wheels
-* **Detail & effects** — sharpening, vignette
-* **Calibration** — red, green, blue primary saturation (collapsed by default)
+## Stage 3: Workbench (analog calibration lab)
+* **Scope**: click it to toggle histogram ↔ luma waveform.
+* **BACK / profile name / SAVE**
+* **Profile sliders**: the selected emulsion's own controls.
+* **CROP/ROTATE/RESIZE/WARP** opens GEOMETRY CONTROLS (aspect presets, ±90°, angle, keystone, output size).
+* **[ TONE CURVE ]**: click to add a point, drag to shape, double-click a point to remove it.
+* **[ 3-WAY COLOR WHEELS ]**: drag to tint; double-click or right-click to reset a wheel.
+* **[ CAMERA CALIBRATION ]** and **[ ADJUSTMENTS ]**.
 
-Every slider rests at 0 and fills from 0 toward its value. Double-click resets; click the number to type.
-
-Viewport toolbar: fit, zoom − / +, **Before / After** (or hold `Space`), **Crop & Rotate** (`C`), output size.
-
-**Export** (`Ctrl+E`) asks for a file name (JPEG, PNG or TIFF), develops at full resolution in the background and offers **Show in folder** when done. The original is never modified.
+Double-click any slider to reset it; click its value to type a number. Hold `Space` (or the ◧ button) to compare with the original. Scroll to zoom, drag or use the scrollbars to pan. `Ctrl+Z` / `Ctrl+Y` undo and redo. **SAVE** (`Ctrl+E`) exports at full resolution in the background; the original is never modified.

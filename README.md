@@ -3,7 +3,7 @@
 **Analog film emulation for CCD-era digital photographs.**
 Pick a photo, compare it through 15 film stocks side by side, then fine-tune it on a grading workbench and export at full resolution.
 
-![Latent Studio – Look stage](docs/screenshot.jpg)
+![Latent Studio workbench](docs/screenshot.jpg)
 
 ---
 
@@ -24,9 +24,9 @@ Nothing else is needed: Python and all libraries are bundled.
 
 ## Using Latent
 
-1. **Library** – *Choose folder…* and pick a photo (double-click or Enter). The last folder is remembered.
-2. **Look** – all 15 film stocks are rendered on your photo. Hover to preview large, double-click to develop.
-3. **Develop** – tune the look, light, colour, tone curve, colour wheels, effects and calibration. Hold **Space** to compare with the original, scroll to zoom, press **C** to crop & rotate, **Ctrl+E** to export.
+1. **Explorer**: **NAVIGATE** to a folder and double-click a photo (or press Enter). The last folder is remembered.
+2. **Emulsion grid**: all 15 film stocks are rendered on your photo. Hover to preview large, double-click to open the workbench.
+3. **Workbench**: tune the profile, tone curve, colour wheels, calibration and adjustments. Hold **Space** to compare with the original, scroll to zoom, press **C** for crop & rotate, and **SAVE** (Ctrl+E) to export.
 
 Edits are non-destructive: your original file is never changed. Going back to a photo in the same session restores its edits.
 
